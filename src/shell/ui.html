@@ -1,0 +1,1495 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>夸克网盘下载器</title>
+<link rel="icon" type="image/png" href="quark_mark.png">
+<style>
+:root{
+  --primary:#0d53ff; --bg:#ededf0; --surface:#fff; --border:#f3f3f5;
+  --text:rgba(6,10,38,.8); --text2:rgba(0,0,0,.5); --text3:rgba(0,0,0,.35);
+  --ok:#12b76a; --warn:#f79009; --err:#f04438;
+  --r-m:10px; --r-l:12px; --r-card:24px;
+  --font:"PingFang SC","Microsoft YaHei",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{display:flex;background:var(--bg);font-family:var(--font);font-size:14px;color:var(--text);overflow:hidden}
+button{font-family:var(--font);cursor:pointer;border:none;outline:none}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:rgba(0,0,0,.16);border-radius:5px;border:3px solid transparent;background-clip:content-box}
+::-webkit-scrollbar-thumb:hover{background:rgba(0,0,0,.3);background-clip:content-box}
+
+/* ---------- sidebar ---------- */
+.side{width:220px;flex:0 0 220px;padding:18px 20px 16px;display:flex;flex-direction:column;min-height:0}
+/* 品牌区：官方夸克网盘图标 + 官方字标 + 「下载器」 */
+.brand{display:flex;align-items:center;margin:0 0 18px;height:30px;user-select:none}
+.brand .bmark{height:26px;width:auto;display:block;flex:0 0 auto}
+.brand .bword{height:14.5px;width:auto;display:block;flex:0 0 auto;margin-left:1px;
+  transform:translateY(-.3px)}
+.brand .bsuf{font-size:15px;font-weight:700;color:#1f2329;margin-left:3px;letter-spacing:.3px;
+  line-height:1}
+.nav{list-style:none;overflow:auto;min-height:0;flex:1}
+.nav li{height:38px;line-height:38px;padding:0 12px;border-radius:6px;font-size:13px;
+  color:rgba(0,0,0,.6);display:flex;align-items:center;gap:10px;cursor:pointer;
+  white-space:nowrap;transition:background .12s,color .12s}
+.nav li:hover{background:rgba(255,255,255,.7)}
+.nav li.on{background:#fff;color:var(--primary);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.05)}
+.nav li svg{width:16px;height:16px;flex:0 0 auto;opacity:.8}
+.nav li.on svg{opacity:1}
+.nav .sep{height:1px;background:rgba(0,0,0,.06);margin:8px 12px;cursor:default}
+.nav .sep:hover{background:rgba(0,0,0,.06)}
+.storage{margin-top:12px;padding:12px 14px;background:#fff;border-radius:var(--r-l);font-size:12px;color:var(--text2)}
+.storage .row{display:flex;justify-content:space-between;margin-bottom:8px}
+.storage .bar{height:4px;border-radius:2px;background:#eef0f4;overflow:hidden}
+.storage .bar i{display:block;height:100%;background:var(--primary);width:0;transition:width .3s}
+
+/* ---------- main ---------- */
+.main{flex:1;min-width:0;display:flex;flex-direction:column;padding-right:16px}
+/* 顶栏：和页面同色，不用白卡片堆叠；只有一条淡描边的搜索框 */
+.top{height:64px;flex:0 0 64px;display:flex;align-items:center;gap:8px}
+.search{flex:0 0 280px;height:36px;background:rgba(255,255,255,.62);border-radius:10px;
+  border:1px solid rgba(0,0,0,.045);display:flex;align-items:center;gap:8px;padding:0 12px;
+  color:var(--text3);transition:background .15s,border-color .15s,box-shadow .15s}
+.search:hover{background:rgba(255,255,255,.82)}
+.search:focus-within{background:#fff;border-color:rgba(13,83,255,.35);
+  box-shadow:0 0 0 3px rgba(13,83,255,.08)}
+.search input{border:none;outline:none;background:transparent;font-size:13px;flex:1;color:var(--text);
+  font-family:var(--font);min-width:0}
+.search input::placeholder{color:var(--text3)}
+.spacer{flex:1}
+.chip{height:32px;padding:0 6px 0 10px;border-radius:16px;display:flex;align-items:center;gap:7px;
+  font-size:12.5px;color:var(--text2);cursor:pointer;transition:background .15s,color .15s}
+.chip:hover{background:rgba(255,255,255,.7);color:var(--text)}
+.chip .dot{width:6px;height:6px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 3px rgba(18,183,106,.14)}
+.chip.bad .dot{background:var(--err);box-shadow:0 0 0 3px rgba(240,68,56,.14)}
+.iconbtn{width:32px;height:32px;border-radius:8px;background:transparent;display:grid;place-items:center;
+  color:var(--text3);transition:background .15s,color .15s}
+.iconbtn:hover{background:rgba(255,255,255,.75);color:var(--text)}
+.iconbtn:active{background:rgba(255,255,255,.95)}
+.iconbtn:disabled{opacity:.4}
+
+.card{flex:1;min-height:0;background:#fff;border-radius:var(--r-card) var(--r-card) 0 0;
+  display:flex;flex-direction:column;overflow:hidden;box-shadow:0 -1px 3px rgba(0,0,0,.03)}
+.tools{flex:0 0 56px;height:56px;display:flex;align-items:center;gap:8px;padding:0 20px;border-bottom:1px solid var(--border)}
+.btn{height:36px;padding:0 16px;border-radius:8px;font-size:12px;font-weight:600;
+  display:inline-flex;align-items:center;gap:6px;transition:filter .12s}
+.btn:hover{filter:brightness(.96)}
+.btn:active{transform:translateY(1px)}
+.btn.pri{background:var(--primary);color:#fff;box-shadow:0 2px 0 0 rgba(0,0,0,.043)}
+.btn.gh{background:#f5f6f8;color:rgba(0,0,0,.65);font-weight:500}
+.btn.gh:hover{background:#eef0f4}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn svg{width:14px;height:14px}
+
+.crumb{flex:0 0 38px;height:38px;display:flex;align-items:center;gap:6px;padding:0 20px;
+  font-size:12px;color:var(--text2);overflow:hidden;white-space:nowrap}
+.crumb span{cursor:pointer}
+.crumb span:hover{color:var(--primary)}
+.crumb .cur{color:var(--text);cursor:default}
+.crumb .cur:hover{color:var(--text)}
+.crumb .sl{color:var(--text3)}
+
+.tbl{flex:1;min-height:0;overflow:auto;padding:0 8px 12px}
+table{width:100%;border-collapse:collapse;table-layout:fixed}
+thead th{height:32px;font-size:12px;font-weight:400;color:var(--text2);text-align:left;
+  border-bottom:1px solid var(--border);position:sticky;top:0;background:#fff;z-index:2}
+tbody td{height:44px;font-size:13px;border-bottom:1px solid #f7f7f9;color:var(--text)}
+tbody tr:hover{background:#fafbfd}
+tbody tr.on{background:#f2f6ff}
+tbody tr.on:hover{background:#eaf1ff}
+.pcell{width:56px;text-align:right;padding-right:14px}
+.play{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:6px;
+  background:#f2f6ff;color:var(--primary);font-size:10px;cursor:pointer;opacity:0;transition:opacity .12s}
+tbody tr:hover .play{opacity:1}
+.play:hover{background:var(--primary);color:#fff}
+.cell{display:flex;align-items:center;gap:10px;min-width:0}
+.name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fname{cursor:pointer}
+.fname:hover{color:var(--primary)}
+.cb{width:14px;height:14px;border:1px solid #d0d0d6;border-radius:3px;flex:0 0 auto;position:relative;background:#fff}
+tr.on .cb{background:var(--primary);border-color:var(--primary)}
+tr.on .cb:after{content:'';position:absolute;left:4px;top:1px;width:4px;height:7px;
+  border:2px solid #fff;border-top:0;border-left:0;transform:rotate(43deg)}
+.fic{width:16px;height:16px;flex:0 0 auto;color:var(--text3)}
+.fic.dir{color:#ffb020}
+.muted{color:var(--text2);font-size:12px}
+.empty{padding:64px 0;text-align:center;color:var(--text3);font-size:13px}
+.empty b{display:block;color:var(--text2);font-weight:500;margin-bottom:6px;font-size:14px}
+.banner{margin:12px 20px 0;padding:10px 14px;border-radius:var(--r-m);font-size:12px;
+  background:#fff4f2;color:#b23617;display:none}
+.banner.on{display:block}
+
+/* ---------- drawer ---------- */
+.drawer{position:fixed;right:0;top:0;bottom:0;width:436px;background:#fff;z-index:40;
+  box-shadow:-10px 0 36px rgba(0,0,0,.12);transform:translateX(102%);
+  transition:transform .24s cubic-bezier(.4,0,.2,1);display:flex;flex-direction:column}
+.drawer.on{transform:none}
+.dhead{padding:20px 22px 14px;border-bottom:1px solid var(--border)}
+.dhead h3{font-size:16px;font-weight:600;color:rgba(6,10,38,.9);display:flex;align-items:center;gap:8px}
+.dhead p{font-size:11px;color:var(--text3);margin-top:4px}
+.dclose{position:absolute;right:16px;top:16px;width:28px;height:28px;border-radius:6px;
+  background:#f5f6f8;color:var(--text2);display:grid;place-items:center;font-size:15px}
+.tiers{display:flex;gap:8px;padding:14px 22px}
+.tier{flex:1;padding:9px 10px;border-radius:var(--r-m);background:#f7f8fa;border:1px solid transparent;
+  cursor:pointer;text-align:center;transition:all .14s}
+.tier b{display:block;font-size:12px;font-weight:600;color:var(--text)}
+.tier small{display:block;font-size:10px;color:var(--text3);margin-top:2px}
+.tier.on{background:#f2f6ff;border-color:var(--primary)}
+.tieredit{display:none;gap:8px;padding:0 22px 12px;align-items:center}
+.tieredit.on{display:flex}
+.tieredit label{flex:1;display:flex;flex-direction:column;gap:3px;font-size:10px;color:var(--text3)}
+.tieredit input{width:100%;height:28px;border:1px solid #e8eaef;border-radius:7px;padding:0 8px;
+  font-size:12px;font-family:var(--font);color:var(--text);background:#fff;outline:none}
+.tieredit input:focus{border-color:var(--primary)}
+.tieredit button{height:28px;padding:0 12px;border-radius:7px;background:var(--primary);color:#fff;
+  font-size:12px;font-weight:500;align-self:flex-end}
+.tier.on b{color:var(--primary)}
+.tier.on small{color:rgba(13,83,255,.7)}
+.dstats{display:flex;padding:0 22px 14px;gap:10px}
+.dstat{flex:1;background:#f7f8fa;border-radius:var(--r-m);padding:10px 12px}
+.dstat i{display:block;font-size:15px;font-weight:600;color:rgba(6,10,38,.9);font-style:normal}
+.dstat small{font-size:10px;color:var(--text3)}
+.dlist{flex:1;overflow:auto;padding:0 12px}
+.job{padding:12px;border-radius:var(--r-m);margin-bottom:6px;background:#fafbfd}
+.job:hover{background:#f5f7fb}
+.job .jt{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text);margin-bottom:8px}
+.job .jn{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.job .js{font-size:11px;flex:0 0 auto}
+.job .jbar{height:6px;border-radius:3px;background:#eef0f4;overflow:hidden}
+.job .jbar i{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,#5b8bff,#0d53ff);
+  width:0;transition:width .25s}
+.job .jm{display:flex;justify-content:space-between;font-size:10.5px;color:var(--text3);margin-top:6px}
+.job .jx{width:22px;height:22px;border-radius:5px;background:#eef0f4;color:var(--text2);
+  display:grid;place-items:center;font-size:11px;flex:0 0 auto;cursor:pointer}
+.job .jx:hover{background:#e2e6ee;color:var(--err)}
+.job .ja{display:flex;gap:6px;flex:0 0 auto}
+.job .jb{height:22px;padding:0 8px;border-radius:5px;background:#eef0f4;color:var(--text2);
+  font-size:11px;display:grid;place-items:center;cursor:pointer;white-space:nowrap}
+.job .jb:hover{background:#e2e6ee;color:var(--primary)}
+.job .jb.pri{background:#eaf0ff;color:var(--primary)}
+.job .jb.pri:hover{background:#dbe6ff}
+.job .jb.dan{color:var(--err)}
+.job .jb.dan:hover{background:rgba(240,68,56,.1);color:var(--err)}
+/* 抽屉顶部两个页签：任务 / 记录 */
+.dtabs{display:flex;gap:6px;padding:0 22px 10px}
+.dtabs span{padding:6px 12px;border-radius:8px;font-size:12px;color:var(--text2);cursor:pointer}
+.dtabs span.on{background:#f2f6ff;color:var(--primary);font-weight:500}
+.dtabs span i{font-style:normal;font-size:10px;color:var(--text3);margin-left:4px}
+.hitem{display:flex;align-items:center;gap:8px;padding:9px 10px;border-radius:9px;font-size:12px;
+  color:var(--text);cursor:pointer}
+.hitem:hover{background:#f5f7fb}
+.hitem .hn{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hitem .hs{font-size:10.5px;color:var(--text3);flex:0 0 auto}
+.hitem .hk{font-size:10.5px;flex:0 0 auto}
+.hitem.ok .hk{color:var(--ok)}
+.hitem.bad .hk{color:var(--err)}
+.hitem .hx{width:20px;height:20px;border-radius:5px;background:#eef0f4;color:var(--text3);
+  display:grid;place-items:center;font-size:11px;flex:0 0 auto;cursor:pointer}
+.hitem .hx:hover{background:rgba(240,68,56,.12);color:var(--err)}
+.dfoot{flex:0 0 auto;padding:12px 22px;border-top:1px solid var(--border);display:flex;gap:8px}
+.dfoot .btn{flex:1;justify-content:center}
+
+/* ---------- fab / toast ---------- */
+.fab{position:fixed;right:26px;bottom:26px;width:56px;height:56px;border-radius:50%;z-index:50;
+  background:linear-gradient(135deg,#5b8bff,#0d53ff);color:#fff;display:grid;place-items:center;
+  box-shadow:0 10px 26px rgba(13,83,255,.4);transition:transform .16s}
+.fab:hover{transform:scale(1.06)}
+.fab svg{width:26px;height:26px}
+.badge{position:absolute;top:-3px;right:-3px;min-width:19px;height:19px;border-radius:10px;
+  background:#ff5b4a;color:#fff;font-size:11px;font-weight:600;display:none;
+  align-items:center;justify-content:center;padding:0 5px;border:2px solid var(--bg)}
+.badge.on{display:flex}
+.toast{position:fixed;left:50%;bottom:32px;transform:translate(-50%,16px);z-index:60;
+  background:rgba(20,22,30,.92);color:#fff;font-size:12.5px;padding:10px 18px;border-radius:8px;
+  opacity:0;pointer-events:none;transition:all .2s;max-width:70vw}
+.toast.on{opacity:1;transform:translate(-50%,0)}
+/* ---------- 导入链接 ---------- */
+.mbox.imp{width:600px}
+.mbox.del{width:420px}
+.mbox.dir{width:520px}
+.mbox .dirwhy{font-size:12px;color:var(--text3);margin-bottom:10px;line-height:1.6}
+.mbox .dirpath{font-size:11.5px;color:var(--text);background:#f6f7f9;border-radius:8px;
+  padding:8px 10px;margin-bottom:10px;word-break:break-all;font-family:ui-monospace,Consolas,monospace}
+.mbox .dirlist{max-height:240px;overflow:auto;border:1px solid var(--border);border-radius:9px;margin-bottom:14px}
+.mbox .dirlist div{display:flex;gap:8px;padding:7px 10px;font-size:12px;border-bottom:1px solid var(--border)}
+.mbox .dirlist div:last-child{border-bottom:0}
+.mbox .dirlist span:first-child{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mbox .dirlist em{font-style:normal;color:var(--text3);font-size:10.5px;flex:0 0 auto}
+.mbox .delnm{font-size:12.5px;color:var(--text);background:#f6f7f9;border-radius:9px;
+  padding:9px 11px;margin-bottom:12px;word-break:break-all;line-height:1.6}
+.mbox .delal{font-size:11.5px;color:var(--text3);margin-bottom:16px}
+.btn.dan{background:var(--err);color:#fff}
+.btn.dan:hover{filter:brightness(.95)}
+.improw{margin:14px 0 0}
+.improw label{font-size:12.5px;color:var(--text3);display:block;margin-bottom:6px}
+#imLink{width:100%;height:38px;padding:0 12px;border-radius:10px;border:1px solid rgba(0,0,0,.09);
+  font-size:13.5px;font-family:inherit;outline:none;background:#fbfbfd;box-sizing:border-box}
+#imLink:focus{border-color:rgba(13,83,255,.45);background:#fff;box-shadow:0 0 0 3px rgba(13,83,255,.08)}
+.impchk{display:flex;align-items:center;gap:8px;margin:12px 0 0;font-size:13px;color:var(--text2);
+  cursor:pointer;user-select:none}
+.impchk input{width:15px;height:15px;accent-color:var(--primary);cursor:pointer}
+.impsep{height:1px;background:rgba(0,0,0,.055);margin:16px 0 0}
+.impsum{margin:14px 0 0;font-size:12.5px;line-height:1.85;color:var(--text2)}
+.impsum b{color:var(--text);font-weight:600}
+.impfiles{margin:10px 0 0;max-height:132px;overflow:auto;border-radius:10px;background:#f7f7fa;
+  padding:8px 10px;font-size:12.5px;color:var(--text2)}
+.impfiles div{display:flex;justify-content:space-between;gap:12px;padding:2px 0}
+.impfiles em{color:var(--text3);font-style:normal;flex:0 0 auto}
+.impfiles i{font-style:normal;font-size:11px;margin-left:6px;padding:0 5px;border-radius:4px}
+.impfiles i.dv{color:#0a7c42;background:rgba(18,183,106,.12)}
+.impfiles i.sv{color:#8a5a00;background:rgba(255,168,0,.15)}
+.impfiles label{display:flex;align-items:center;gap:7px;min-width:0;flex:1 1 auto;cursor:pointer}
+.impfiles label span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.impfiles input.impck{width:14px;height:14px;flex:0 0 auto;accent-color:var(--primary);cursor:pointer}
+.impfiles div.off label span{color:var(--text3)}
+.impfiles div.off em{opacity:.5}
+.impsel{display:flex;justify-content:space-between;align-items:center;margin:10px 0 0;
+  font-size:11.5px;color:var(--text3)}
+.impsel a{color:var(--primary);cursor:pointer;margin-right:12px}
+.impsel a:hover{text-decoration:underline}
+.mbtns.imp{margin:14px 0 0;justify-content:flex-end;gap:10px}
+.impbar{height:4px;border-radius:2px;background:rgba(0,0,0,.06);overflow:hidden;margin:12px 0 0}
+.impbar i{display:block;height:100%;width:0;background:var(--primary);transition:width .3s}
+.impwarn{margin:10px 0 0;padding:8px 10px;border-radius:8px;background:rgba(240,68,56,.07);
+  color:#c0362c;font-size:12.5px;line-height:1.7}
+.modal{position:fixed;inset:0;background:rgba(15,18,28,.42);z-index:70;display:none;align-items:center;justify-content:center}
+.modal.on{display:flex}
+.mbox{width:460px;background:#fff;border-radius:16px;padding:24px 26px;box-shadow:0 20px 60px rgba(0,0,0,.22)}
+.mbox h4{font-size:16px;font-weight:600;color:rgba(6,10,38,.9);margin-bottom:10px}
+.mbox p{font-size:12.5px;color:var(--text2);line-height:1.7;margin-bottom:14px}
+.mbox .malt{margin:18px 0 8px;font-size:11.5px;color:var(--text3)}
+.mbtns{display:flex;gap:10px}
+.mbtns .btn{flex:1;justify-content:center}
+.mhint{font-size:11.5px;color:var(--text3);margin-top:10px;min-height:16px}
+.dpath{display:flex;align-items:center;gap:7px;margin:14px 18px 10px;padding:8px 11px;
+  background:#f6f7f9;border-radius:9px;font-size:11.5px;color:var(--text2);cursor:pointer;overflow:hidden}
+.dpath:hover{background:#eef1f6}
+.dpath span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dpath .dopen{flex:0 0 auto;color:var(--primary);font-weight:500}
+.mbox textarea{width:100%;height:74px;border:1px solid #e6e8ee;border-radius:8px;padding:8px 10px;
+  font-size:11.5px;font-family:ui-monospace,Consolas,monospace;color:var(--text);resize:none;outline:none}
+.mbox textarea:focus{border-color:var(--primary)}
+.chip{cursor:pointer}
+/* ---------- 播放器 ---------- */
+.player{position:fixed;inset:0;background:rgba(10,12,20,.72);z-index:80;display:none;
+  align-items:center;justify-content:center;backdrop-filter:blur(3px)}
+.player.on{display:flex}
+.pwrap{width:min(1100px,88vw);background:#14161d;border-radius:16px;overflow:hidden;
+  box-shadow:0 30px 80px rgba(0,0,0,.5)}
+.phead{height:52px;display:flex;align-items:center;gap:10px;padding:0 18px;color:#fff}
+.phead .pt{flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.phead .pst{font-size:11.5px;color:rgba(255,255,255,.55);flex:0 0 auto}
+.phead .px{width:26px;height:26px;border-radius:6px;background:rgba(255,255,255,.1);color:#fff;
+  display:grid;place-items:center;font-size:14px;flex:0 0 auto}
+.phead .px:hover{background:rgba(255,255,255,.2)}
+video{display:block;width:100%;max-height:74vh;background:#000;outline:none}
+.pbar{height:3px;background:rgba(255,255,255,.1)}
+.pbar i{display:block;height:100%;background:linear-gradient(90deg,#5b8bff,#0d53ff);width:0;transition:width .3s}
+</style>
+</head>
+<body>
+
+<aside class="side">
+  <div class="brand">
+    <img class="bmark" src="quark_mark.png" alt="">
+    <img class="bword" src="quark_word.png" alt="夸克网盘">
+    <span class="bsuf">下载器</span>
+  </div>
+  <ul class="nav" id="nav"></ul>
+  <div class="storage">
+    <div class="row"><span>存储空间</span><span id="capTxt">--</span></div>
+    <div class="bar"><i id="capBar"></i></div>
+  </div>
+</aside>
+
+<main class="main">
+  <div class="top">
+    <div class="search">
+      <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6">
+        <circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14" stroke-linecap="round"/></svg>
+      <input id="q" placeholder="搜索文件名">
+    </div>
+    <div class="spacer"></div>
+    <div class="chip" id="userChip" title="点击登录 / 查看账号"><span class="dot"></span><span id="userTxt">未登录</span></div>
+    <button class="iconbtn" id="btnReload" title="刷新">
+      <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M13.5 8a5.5 5.5 0 1 1-1.7-4" stroke-linecap="round"/><path d="M13.8 1.6v3.2h-3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <button class="iconbtn" id="btnFolder" title="打开下载目录">
+      <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M1.8 4.2h4l1.2 1.6h7.2v7.4H1.8z" stroke-linejoin="round"/></svg>
+    </button>
+  </div>
+
+  <div class="banner" id="banner"></div>
+
+  <section class="card">
+    <div class="tools">
+      <button class="btn pri" id="btnDl">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7">
+          <path d="M8 2.4v7.2M5 7l3 3 3-3" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M2.6 12.4h10.8" stroke-linecap="round"/></svg>
+        下载所选
+      </button>
+      <button class="btn gh" id="btnImport" title="贴一个夸克分享链接，直接下载到本地">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
+          <path d="M6.4 9.6l3.2-3.2M7.2 4.4l1.3-1.3a2.6 2.6 0 1 1 3.7 3.7l-1.3 1.3M8.8 11.6l-1.3 1.3a2.6 2.6 0 1 1-3.7-3.7l1.3-1.3" stroke-linecap="round"/></svg>
+        导入链接
+      </button>
+      <button class="btn gh" id="btnAll">全选</button>
+      <button class="btn gh" id="btnNone">清空</button>
+      <div class="spacer"></div>
+      <span class="muted" id="selInfo"></span>
+    </div>
+    <div class="crumb" id="crumb"></div>
+    <div class="tbl">
+      <table>
+        <colgroup><col style="width:52px"><col><col style="width:120px"><col style="width:150px"><col style="width:56px"></colgroup>
+        <thead><tr><th></th><th>文件名</th><th>大小</th><th>修改时间</th><th></th></tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+      <div class="empty" id="empty" style="display:none"></div>
+    </div>
+  </section>
+</main>
+
+<div class="drawer" id="drawer">
+  <div class="dhead">
+    <h3><svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" style="color:#0d53ff">
+      <path d="M9.2 1L3 9h3.4L6 15l6.4-8.2H9z"/></svg>传输加速</h3>
+    <p>官方接口 · 按连接整形，靠分片并发提速</p>
+    <button class="dclose" id="dclose">×</button>
+  </div>
+  <div class="tiers" id="tiers"></div>
+  <div class="tieredit" id="tieredit">
+    <label>连接数<input id="tcConns" type="number" min="8" max="384" step="8"></label>
+    <label>切片 MB<input id="tcPart" type="number" min="1" max="32" step="1"></label>
+    <label>token 池<input id="tcTokens" type="number" min="4" max="64" step="4"></label>
+    <button id="tcApply">应用</button>
+  </div>
+  <div class="dstats">
+    <div class="dstat"><i id="stSpeed">0.00</i><small>实时 MB/s</small></div>
+    <div class="dstat"><i id="stPct">0%</i><small>总进度</small></div>
+    <div class="dstat"><i id="stRun">0</i><small>传输中</small></div>
+  </div>
+  <div class="dpath" id="dpath" title="点击更改保存目录">
+    <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5">
+      <path d="M1.8 4.2h4l1.2 1.6h7.2v7.4H1.8z" stroke-linejoin="round"/></svg>
+    <span id="dpathTxt">…</span>
+    <span class="dopen" id="dpathOpen" title="打开这个目录">打开</span>
+  </div>
+  <div class="dtabs">
+    <span data-tab="jobs" class="on">任务<i id="tabJobs">0</i></span>
+    <span data-tab="hist">下载记录<i id="tabHist">0</i></span>
+  </div>
+  <div class="dlist" id="dlist"></div>
+  <div class="dfoot">
+    <button class="btn gh" id="btnPause">全部暂停</button>
+    <button class="btn gh" id="btnClear">清理已结束</button>
+  </div>
+</div>
+
+<button class="fab" id="fab">
+  <svg viewBox="0 0 16 16" fill="currentColor"><path d="M9.2 1L3 9h3.4L6 15l6.4-8.2H9z"/></svg>
+  <span class="badge" id="fbadge">0</span>
+</button>
+
+<div class="modal" id="importModal">
+  <div class="mbox imp">
+    <h4>导入下载链接</h4>
+    <p>贴夸克分享链接（带提取码也行，例如 <code>https://pan.quark.cn/s/xxxx?pwd=1234</code>）。
+       加速器会临时转存到自己网盘的一个隐藏目录，下载完立刻删掉 —— 你的网盘里不会留下东西。</p>
+    <div class="improw">
+      <label>分享链接</label>
+      <input id="imLink" placeholder="https://pan.quark.cn/s/xxxxxxxx?pwd=abcd" spellcheck="false">
+    </div>
+    <label class="impchk"><input type="checkbox" id="imDel" checked>
+      <span>下载完成后删除网盘里的临时转存文件（推荐）</span></label>
+    <div class="mbtns imp">
+      <button class="btn gh" id="imCheck">先看看里面有什么</button>
+      <button class="btn pri" id="imGo">开始下载</button>
+      <button class="btn gh" id="imStop" style="display:none">停止</button>
+    </div>
+    <div class="mhint" id="imHint"></div>
+    <div class="impsum" id="imSum"></div>
+    <div class="impsel" id="imSel" style="display:none">
+      <span><a id="imAll">全选</a><a id="imNone">全不选</a></span>
+      <span id="imSelCnt"></span>
+    </div>
+    <div class="impfiles" id="imFiles" style="display:none"></div>
+    <div class="impbar" id="imBarBox" style="display:none"><i id="imBar"></i></div>
+    <div class="impwarn" id="imWarn" style="display:none"></div>
+    <div class="impsep"></div>
+    <p class="malt">小文件可以不转存直接下：免登录也有直链，但那条通道被限速到
+      约 0.3 MB/s，而且只对 50 MB 以内的文件开放。大文件走「先转存进你的网盘 → 加速
+      通道拉回来 → 下完自动删掉」，速度快几十倍，代价是临时占一点空间。超过可用空间的
+      文件会按批排队处理。</p>
+  </div>
+</div>
+
+<div class="modal" id="dirModal">
+  <div class="mbox dir">
+    <h4>下载目录</h4>
+    <p class="dirwhy" id="dirWhy"></p>
+    <div class="dirpath"><span id="dirPath"></span></div>
+    <div class="dirlist" id="dirList"></div>
+    <div class="mbtns imp">
+      <button class="btn gh" id="dirCopy">复制路径</button>
+      <button class="btn pri" id="dirOk">知道了</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="delModal">
+  <div class="mbox del">
+    <h4>删除本地文件</h4>
+    <div class="delnm" id="delName"></div>
+    <p class="delal">文件会从磁盘上真的删掉（进回收站也不会，直接删）。网盘里的原文件不受影响。</p>
+    <div class="mbtns imp">
+      <button class="btn gh" id="delNo">取消</button>
+      <button class="btn dan" id="delGo">删除</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="loginModal">
+  <div class="mbox">
+    <h4>登录夸克账号</h4>
+    <p>点下面的按钮会打开一个独立浏览器窗口，用手机夸克 App 扫码登录；登录完成后回这里点「我已完成登录」，加速器会自动取到 Cookie。</p>
+    <div class="mbtns">
+      <button class="btn gh" id="lnOpen">打开登录窗口</button>
+      <button class="btn pri" id="lnDone">我已完成登录</button>
+    </div>
+    <div class="mhint" id="lnHint"></div>
+    <p class="malt">或者直接把 Cookie 粘进来（F12 → Network → 任一请求 → Cookie 整行）：</p>
+    <textarea id="lnPaste" placeholder="_c_WBKFRo=...; __pus=...; __puus=..."></textarea>
+    <div class="mbtns"><button class="btn gh" id="lnPasteGo">用这段 Cookie</button></div>
+  </div>
+</div>
+
+<div class="player" id="pv">
+  <div class="pwrap">
+    <div class="phead">
+      <span class="pt" id="pvName">预览</span>
+      <span class="pst" id="pvStat"></span>
+      <button class="px" id="pvClose">×</button>
+    </div>
+    <video id="pvVideo" controls preload="auto" playsinline></video>
+    <div class="pbar"><i id="pvBar"></i></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+var S = {
+  tab: 'jobs', path: [{fid:'0', name:'全部文件'}], entries: [], picked: {}, snap: null,
+           tier: 'turbo', tiers: [], q: '', logged: false, listErr: '', demo: false,
+  outNote: '' };
+
+var ICON = {
+  folder: '<path d="M1.5 3.6h4.2l1.3 1.8h7.5v8.1H1.5z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>',
+  file: '<path d="M3.2 1.8h6l3.6 3.6v8.8H3.2z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M9.2 1.8v3.6h3.6" fill="none" stroke="currentColor" stroke-width="1.4"/>',
+  video: '<rect x="1.6" y="3.2" width="12.8" height="9.6" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M6.6 6.2l3.4 1.8-3.4 1.8z" fill="currentColor"/>',
+  img: '<rect x="1.8" y="2.6" width="12.4" height="10.8" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="5.6" cy="6.2" r="1.1" fill="currentColor"/><path d="M2.4 11.6l3.4-3 2.6 2.4 2.2-1.8 3 2.6" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>',
+  doc: '<path d="M3.4 1.8h5.4l3.8 3.8v8.6H3.4z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M5.8 8.6h4.4M5.8 11h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>',
+  audio: '<path d="M6.2 12.2V4.4l6-1.2v7.8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><circle cx="4.6" cy="12.4" r="1.6" fill="currentColor"/><circle cx="10.6" cy="11.2" r="1.6" fill="currentColor"/>',
+  zip: '<rect x="2.6" y="1.8" width="10.8" height="12.4" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 3.4v1.4M8 6.2v1.4M8 9v1.4" stroke="currentColor" stroke-width="1.3"/>',
+  apk: '<rect x="2.4" y="3.4" width="11.2" height="9.2" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5.4 12.6v1.6M10.6 12.6v1.6M5.2 6.4h.02M10.8 6.4h.02" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
+  clock: '<circle cx="8" cy="8" r="6.1" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 4.6V8l2.4 1.6" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>',
+  star: '<path d="M8 1.8l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.6l-3.8 2 .7-4.3-3.1-3 4.3-.6z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>',
+  trash: '<path d="M2.8 4.4h10.4M6.2 4.4V2.8h3.6v1.6M4 4.4l.8 9.2h6.4l.8-9.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>',
+  share: '<circle cx="12" cy="3.8" r="1.9" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="4" cy="8" r="1.9" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="12" cy="12.2" r="1.9" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5.7 7.2l4.6-2.4M5.7 8.8l4.6 2.4" stroke="currentColor" stroke-width="1.3"/>',
+  backup: '<path d="M8 2.6v7.2M5.2 7l2.8 2.8L10.8 7" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.8 12.6h10.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>'
+};
+
+function icon(name, cls) {
+  return '<svg class="fic ' + (cls || '') + '" viewBox="0 0 16 16">' + (ICON[name] || ICON.file) + '</svg>';
+}
+
+function kindOf(name, dir) {
+  if (dir) return 'folder';
+  var n = (name || '').toLowerCase();
+  if (/\.(mp4|mkv|avi|mov|flv|wmv|ts|webm|rmvb)$/.test(n)) return 'video';
+  if (/\.(jpg|jpeg|png|gif|bmp|webp|heic|svg)$/.test(n)) return 'img';
+  if (/\.(mp3|flac|wav|aac|m4a|ape|ogg)$/.test(n)) return 'audio';
+  if (/\.(pdf|doc|docx|xls|xlsx|ppt|pptx|txt|md|csv)$/.test(n)) return 'doc';
+  if (/\.(zip|rar|7z|tar|gz|bz2|xz|z01|001)$/.test(n)) return 'zip';
+  if (/\.apk$/.test(n)) return 'apk';
+  return 'file';
+}
+
+function human(n) {
+  if (!n) return '0 B';
+  var u = ['B', 'KB', 'MB', 'GB', 'TB'], i = 0, v = n;
+  while (v >= 1024 && i < 4) { v /= 1024; i++; }
+  return (i === 0 ? v : v.toFixed(1)) + ' ' + u[i];
+}
+
+function fmtTime(ts) {
+  if (!ts) return '-';
+  var d = new Date(ts * 1000), p = function (x) { return (x < 10 ? '0' : '') + x; };
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+}
+
+function esc(s) {
+  return String(s === undefined || s === null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function toast(msg) {
+  var t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('on');
+  clearTimeout(t._h); t._h = setTimeout(function () { t.classList.remove('on'); }, 2600);
+}
+
+function api(path, body) {
+  var opt = body === undefined ? {} : {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+  };
+  return fetch('/api/' + path, opt).then(function (r) { return r.json(); });
+}
+
+/* ---------------- sidebar ---------------- */
+var NAV = [
+  { k: 'all', ic: 'folder', t: '全部文件' },
+  { k: 'recent', ic: 'clock', t: '最近' },
+  { k: 'video', ic: 'video', t: '视频' },
+  { k: 'img', ic: 'img', t: '图片' },
+  { k: 'doc', ic: 'doc', t: '文档' },
+  { k: 'audio', ic: 'audio', t: '音频' },
+  { k: '-', t: '' },
+  { k: 'fav', ic: 'star', t: '收藏' },   // 夸克无公开收藏接口，点开提示
+  { k: 'share', ic: 'share', t: '我的分享' },
+  { k: 'trash', ic: 'trash', t: '回收站' },
+  { k: 'backup', ic: 'backup', t: '我的备份' }
+];
+var navOn = 'all';
+// 视频 / 图片 / 文档 / 音频 按扩展名在本地过滤（夸克网页版这几个入口也是同一批文件）
+var CAT = {
+  video: ['mp4', 'mkv', 'avi', 'mov', 'wmv', 'flv', 'ts', 'm4v', 'rmvb', 'webm'],
+  img: ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'heic', 'svg', 'tif', 'tiff'],
+  doc: ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'md', 'epub', 'csv', 'zip', 'rar', '7z'],
+  audio: ['mp3', 'flac', 'wav', 'aac', 'm4a', 'ogg', 'ape', 'wma']
+};
+
+function catOf(name) {
+  var m = /.([a-z0-9]+)$/i.exec(name || '');
+  return m ? m[1].toLowerCase() : '';
+}
+
+function buildNav() {
+  document.getElementById('nav').innerHTML = NAV.map(function (n) {
+    if (n.k === '-') return '<li class="sep"></li>';
+    return '<li data-k="' + n.k + '" class="' + (n.k === navOn ? 'on' : '') + '">' +
+      icon(n.ic) + '<span>' + n.t + '</span></li>';
+  }).join('');
+  Array.prototype.forEach.call(document.querySelectorAll('.nav li[data-k]'), function (li) {
+    li.onclick = function () {
+      navOn = li.dataset.k;
+      buildNav();
+      if (navOn === 'all') { go('0', '全部文件'); }
+      else if (navOn === 'recent' || navOn === 'trash') {
+        S.path = [{ fid: navOn, name: li.textContent.trim() }];
+        renderCrumb(); load();
+      } else if (CAT[navOn]) { render(); }
+      else { toast('「' + li.textContent.trim() + '」在官方网页版里查看，加速器只接管下载'); }
+    };
+  });
+}
+
+document.getElementById('q').oninput = function (e) { S.q = e.target.value.trim().toLowerCase(); render(); };
+
+/* ---------------- list ---------------- */
+function go(fid, name) {
+  if (fid === '0') { S.path = [{ fid: '0', name: '全部文件' }]; }
+  else { S.path.push({ fid: fid, name: name }); }
+  load();
+}
+
+function renderCrumb() {
+  var el = document.getElementById('crumb');
+  el.innerHTML = S.path.map(function (p, i) {
+    var last = i === S.path.length - 1;
+    var s = last ? '<span class="cur">' + esc(p.name) + '</span>'
+                 : '<span data-i="' + i + '">' + esc(p.name) + '</span>';
+    return s + (last ? '' : '<span class="sl">/</span>');
+  }).join('');
+  Array.prototype.forEach.call(el.querySelectorAll('span[data-i]'), function (s) {
+    s.onclick = function () {
+      var i = parseInt(s.dataset.i, 10);
+      S.path = S.path.slice(0, i + 1);
+      load();
+    };
+  });
+}
+
+function render() {
+  var tb = document.getElementById('tbody');
+  var list = S.entries.filter(function (e) {
+    if (S.q && (e.name || '').toLowerCase().indexOf(S.q) < 0) return false;
+    if (CAT[navOn]) return !e.is_dir && CAT[navOn].indexOf(catOf(e.name)) >= 0;
+    return true;
+  });
+  if (!list.length) {
+    tb.innerHTML = '';
+    var em = document.getElementById('empty');
+    em.style.display = 'block';
+    if (S.q) {
+      em.innerHTML = '<b>没有匹配的文件</b>试试别的关键词';
+    } else if (!S.logged) {
+      em.innerHTML = '<b>还没有登录</b>' +
+        '<span style="color:var(--text3)">登录后这里会显示你网盘里的文件</span>' +
+        '<div style="margin-top:18px"><button class="btn pri" id="emLogin" ' +
+        'style="margin:0 auto;padding:0 22px">登录夸克账号</button></div>';
+      var b = document.getElementById('emLogin');
+      if (b) b.onclick = openLogin;
+    } else if (S.listErr) {
+      em.innerHTML = '<b>读取文件列表失败</b><span style="color:var(--text3);font-size:12px">' +
+        esc(S.listErr) + '</span>';
+    } else {
+      em.innerHTML = '<b>这里还没有文件</b>换个目录看看，或点右上角刷新';
+    }
+  } else {
+    document.getElementById('empty').style.display = 'none';
+    tb.innerHTML = list.map(function (e, i) {
+      var on = !!S.picked[e.fid];
+      var k = kindOf(e.name, e.is_dir);
+      return '<tr data-fid="' + esc(e.fid) + '" class="' + (on ? 'on' : '') + '">' +
+        '<td style="padding-left:20px"><div class="cell"><span class="cb"></span></div></td>' +
+        '<td><div class="cell">' + icon(k, e.is_dir ? 'dir' : '') +
+        '<span class="name fname" data-dir="' + (e.is_dir ? 1 : 0) + '">' + esc(e.name) + '</span></div></td>' +
+        '<td class="muted">' + (e.is_dir ? '-' : human(e.size)) + '</td>' +
+        '<td class="muted">' + fmtTime(e.updated) + '</td>' +
+        '<td class="pcell">' + (e.is_dir ? '' :
+          (kindOf(e.name, false) === 'video'
+            ? '<span class="play" data-fid="' + esc(e.fid) + '" data-name="' + esc(e.name) +
+              '" data-size="' + (e.size || 0) + '" title="边下边播">▶</span>' : '')) + '</td></tr>';
+    }).join('');
+    Array.prototype.forEach.call(tb.querySelectorAll('tr'), function (tr) {
+      var fid = tr.dataset.fid;
+      var ent = S.entries.filter(function (x) { return x.fid === fid; })[0];
+      tr.querySelector('.cb').parentNode.parentNode.onclick = function (ev) { toggle(ent, tr); };
+      var fn = tr.querySelector('.fname');
+      fn.onclick = function (ev) {
+        ev.stopPropagation();
+        if (ent.is_dir) { go(ent.fid, ent.name); }
+        else { toggle(ent, tr); }
+      };
+      var pl = tr.querySelector('.play');
+      if (pl) {
+        pl.onclick = function (ev) {
+          ev.stopPropagation();
+          openPreview(pl.dataset.fid, pl.dataset.name, parseInt(pl.dataset.size || '0', 10));
+        };
+      }
+    });
+  }
+  var n = Object.keys(S.picked).length;
+  var sz = 0;
+  for (var k in S.picked) sz += S.picked[k].size || 0;
+  document.getElementById('selInfo').textContent = n ? ('已选 ' + n + ' 项 · ' + human(sz)) : '';
+  document.getElementById('btnDl').disabled = !n;
+}
+
+function toggle(ent, tr) {
+  if (S.picked[ent.fid]) { delete S.picked[ent.fid]; }
+  else { S.picked[ent.fid] = { fid: ent.fid, name: ent.name, size: ent.size, dir: ent.is_dir }; }
+  if (tr) tr.classList.toggle('on', !!S.picked[ent.fid]);
+  render();
+}
+
+function load() {
+  var cur = S.path[S.path.length - 1];
+  var fid = cur.fid;
+  var nav = (fid === 'recent' || fid === 'trash') ? fid : 'all';
+  renderCrumb();
+  api('list?fid=' + encodeURIComponent(nav === 'all' ? fid : '0') + '&nav=' + nav).then(function (r) {
+    S.listErr = r.ok ? '' : (r.err || '未知错误');
+    S.entries = r.ok ? (r.entries || []) : [];
+    render();
+    if (!r.ok) toast('列目录失败：' + S.listErr);
+  }).catch(function (e) { toast('连接本地服务失败：' + e.message); });
+}
+
+/* ---------------- transfer drawer ---------------- */
+function tierList() {
+  // 后端 profiles.TIERS 是 list，兼容 dict 两种形态
+  var t = S.tiers;
+  if (!t) return [];
+  if (Array.isArray(t)) return t;
+  return Object.keys(t).map(function (k) { var o = t[k]; o = o || {}; o.key = o.key || k; return o; });
+}
+
+function tierHtml() {
+  return tierList().map(function (t) {
+    var sub;
+    if (t.key === 'custom') sub = '自己填参数';
+    else if (t.key === 'auto') sub = '自动寻优';
+    else sub = t.conns + ' 连接 · ' + t.part_mb + 'MB';
+    return '<div class="tier ' + (S.tier === t.key ? 'on' : '') + '" data-k="' + t.key + '" title="' +
+      esc(t.desc || '') + '"><b>' + esc(t.name || t.key) + '</b><small>' + esc(sub) + '</small></div>';
+  }).join('');
+}
+
+function syncTierEdit() {
+  var box = document.getElementById('tieredit');
+  box.classList.toggle('on', S.tier === 'custom');
+  if (S.tier === 'custom') {
+    document.getElementById('tcConns').value = S.conns || 384;
+    document.getElementById('tcPart').value = S.part_mb || 1;
+    document.getElementById('tcTokens').value = S.tokens || 32;
+  }
+}
+
+function applyCustom() {
+  var c = parseInt(document.getElementById('tcConns').value, 10) || 384;
+  var p = parseInt(document.getElementById('tcPart').value, 10) || 1;
+  var t = parseInt(document.getElementById('tcTokens').value, 10) || 32;
+  c = Math.max(8, Math.min(384, c));
+  p = Math.max(1, Math.min(32, p));
+  t = Math.max(4, Math.min(64, t));
+  api('profile', { tier: 'custom', conns: c, part: p, tokens: t }).then(function (r) {
+    if (r.ok) {
+      S.tier = r.tier; S.tiers = r.tiers; S.conns = r.conns; S.part_mb = r.part_mb; S.tokens = r.tokens;
+      buildTiers();
+      toast('已应用自定义：' + r.conns + ' 连接 / ' + r.part_mb + ' MB 切片 / ' + r.tokens + ' token');
+    } else { toast('应用失败：' + (r.err || '')); }
+  });
+}
+
+function buildTiers() {
+  document.getElementById('tiers').innerHTML = tierHtml();
+  syncTierEdit();
+  Array.prototype.forEach.call(document.querySelectorAll('.tier'), function (el) {
+    el.onclick = function () {
+      api('profile', { tier: el.dataset.k }).then(function (r) {
+        if (r.ok) {
+          S.tier = r.tier; S.tiers = r.tiers; buildTiers();
+          if (r.tier === 'auto') {
+            // 自适应起手只有 16 条，要爬几个窗口才到最快；小文件可能还没爬到就下完了。
+            // 不说明的话用户会以为「切过去反而更慢」，这就是上一版的真实反馈。
+            toast('自适应已开启：起手 16 连接，按实测吞吐自己往上探；' +
+                  '几十 MB 的小文件建议用「极速」');
+          } else {
+            toast('已切到 ' + el.querySelector('b').textContent +
+                  '：' + r.conns + ' 连接 / ' + r.part_mb + ' MB 切片 / ' + r.tokens + ' token');
+          }
+        } else { toast('切换失败：' + (r.err || '')); }
+      });
+    };
+  });
+}
+
+var ST = {
+  queued: ['排队', '#8a8f9c'], running: ['传输中', '#0d53ff'],
+  paused: ['已暂停', '#f79009'], done: ['完成', '#12b76a'],
+  failed: ['失败', '#f04438'], canceled: ['已取消', '#8a8f9c']
+};
+
+function fmtLeft(s) {
+  s = Math.max(0, Math.round(s || 0));
+  if (s >= 3600) return Math.floor(s / 3600) + ' 时 ' + Math.floor((s % 3600) / 60) + ' 分';
+  if (s >= 60) return Math.floor(s / 60) + ' 分 ' + (s % 60) + ' 秒';
+  return s + ' 秒';
+}
+
+function jobActions(j) {
+  var a = [];
+  if (j.state === 'running') {
+    a.push('<span class="jb" data-act="pause" data-id="' + esc(j.id) + '">暂停</span>');
+  } else if (j.state === 'paused') {
+    a.push('<span class="jb pri" data-act="resume" data-id="' + esc(j.id) + '">继续</span>');
+  } else if (j.state === 'queued') {
+    a.push('<span class="jb" data-act="pause" data-id="' + esc(j.id) + '">暂停</span>');
+  } else if (j.state === 'failed') {
+    a.push('<span class="jb pri" data-act="retry" data-id="' + esc(j.id) + '">重试</span>');
+  } else if (j.state === 'done') {
+    a.push('<span class="jb" data-act="reveal" data-id="' + esc(j.id) + '" data-path="' + esc(j.path || '') + '">打开</span>');
+  }
+  // 删本地文件：只对已经有落盘结果的任务开放（失败/取消也可能留了半截文件）
+  if (j.state === 'done' || j.state === 'failed' || j.state === 'canceled') {
+    a.push('<span class="jb dan" data-act="del" data-id="' + esc(j.id) +
+      '" data-name="' + esc(j.name) + '" data-size="' + (j.size || 0) +
+      '" title="删除本地文件">删除</span>');
+  }
+  if (j.state !== 'running') {
+    a.push('<span class="jx" data-act="remove" data-id="' + esc(j.id) + '" title="从列表移除">×</span>');
+  } else {
+    a.push('<span class="jx" data-act="cancel" data-id="' + esc(j.id) + '" title="取消下载">×</span>');
+  }
+  return '<span class="ja">' + a.join('') + '</span>';
+}
+
+function renderJobs(items) {
+  if (!items.length) {
+    return '<div class="empty" style="padding:40px 0"><b>还没有下载任务</b>' +
+      '在列表里勾选文件，点「下载所选」</div>';
+  }
+  return items.map(function (j) {
+    var pct = Math.max(0, Math.min(100, j.pct || 0));
+    var st = ST[j.state] || [j.state, '#888'];
+    var meta;
+    if (j.state === 'running') {
+      meta = (j.speed || 0).toFixed(2) + ' MB/s' +
+        (j.conns ? ' · ' + j.conns + ' 连接' : '') +
+        (j.left ? ' · 剩余 ' + j.left : '');
+    } else if (j.state === 'paused') {
+      meta = '已停 · 续传从 ' + human(j.got) + ' 继续';
+    } else {
+      // 状态名已经在右边显示了，note 跟状态名一样时再写一遍很啰嗦
+      meta = (j.note && j.note.indexOf(st[0]) !== 0) ? j.note : '';
+    }
+    return '<div class="job" data-id="' + esc(j.id) + '">' +
+      '<div class="jt">' + icon(kindOf(j.name, false)) +
+      '<span class="jn" title="' + esc(j.name) + '">' + esc(j.name) + '</span>' +
+      '<span class="js" style="color:' + st[1] + '">' + st[0] + '</span>' +
+      jobActions(j) + '</div>' +
+      '<div class="jbar"><i style="width:' + pct + '%"></i></div>' +
+      '<div class="jm"><span>' + human(j.got) + ' / ' + human(j.size) +
+      ' · ' + pct.toFixed(0) + '%</span><span>' + meta + '</span></div></div>';
+  }).join('');
+}
+
+function renderHist(hist) {
+  if (!hist.length) {
+    return '<div class="empty" style="padding:40px 0"><b>还没有下载记录</b>' +
+      '下载完成、失败、取消的任务都会记在这里，重启后还在</div>';
+  }
+  return hist.map(function (h) {
+    var ok = h.state === 'done';
+    var cls = ok ? 'ok' : 'bad';
+    var ts = h.ts ? fmtTime(h.ts) : '';
+    return '<div class="hitem ' + cls + '" data-path="' + esc(h.path || '') + '" title="' + esc(h.path || '') + '">' +
+      icon(kindOf(h.name || '', false)) +
+      '<span class="hn">' + esc(h.name || '') + '</span>' +
+      '<span class="hs">' + human(h.size) + ' · ' + ts + '</span>' +
+      '<span class="hk">' + (ok ? '完成' : (ST[h.state] || [h.state])[0]) + '</span>' +
+      '<span class="hx" data-del="' + esc(h.id || '') + '" data-name="' + esc(h.name || '') +
+      '" data-size="' + (h.size || 0) + '" title="删除本地文件">×</span></div>';
+  }).join('');
+}
+
+function renderSnap(sn) {
+  if (!sn) return;
+  S.snap = sn;
+  var items = sn.items || [];
+  var hist = sn.hist || [];
+  document.getElementById('stSpeed').textContent = (sn.speed || 0).toFixed(2);
+  document.getElementById('stPct').textContent = Math.round(sn.pct || 0) + '%';
+  var live = items.filter(function (j) {
+    return j.state === 'running' || j.state === 'queued';
+  });
+  document.getElementById('stRun').textContent = live.length;
+  var act = items.filter(function (j) {
+    return j.state === 'running' || j.state === 'queued' || j.state === 'paused';
+  }).length;
+  var b = document.getElementById('fbadge');
+  b.textContent = act; b.classList.toggle('on', act > 0);
+  document.getElementById('tabJobs').textContent = items.length ? (' ' + items.length) : '';
+  document.getElementById('tabHist').textContent = hist.length ? (' ' + hist.length) : '';
+
+  if (S.tab === 'hist') {
+    document.getElementById('dlist').innerHTML = renderHist(hist);
+  } else {
+    document.getElementById('dlist').innerHTML = renderJobs(items);
+    wireJobs();
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('.hitem'), function (h) {
+    h.onclick = function () {
+      if (h.dataset.path) api('reveal', { path: h.dataset.path });
+      else toast('这条记录没有文件路径');
+    };
+    var x = h.querySelector('.hx');
+    if (x) {
+      x.onclick = function (ev) {
+        ev.stopPropagation();
+        delFile(x.dataset.del, x.dataset.name, parseInt(x.dataset.size || '0', 10));
+      };
+    }
+  });
+
+  var pb = document.getElementById('btnPause');
+  pb.textContent = sn.paused ? '全部继续' : '全部暂停';
+}
+
+function wireJobs() {
+  Array.prototype.forEach.call(document.querySelectorAll('.job [data-act]'), function (el) {
+    el.onclick = function (ev) {
+      ev.stopPropagation();
+      var act = el.dataset.act, id = el.dataset.id;
+      var p;
+      if (act === 'pause') p = api('pause', { id: id });
+      else if (act === 'resume') p = api('resume', { id: id });
+      else if (act === 'retry') p = api('retry', { id: id });
+      else if (act === 'cancel') p = api('cancel', { id: id });
+      else if (act === 'remove') p = api('remove', { id: id });
+      else if (act === 'reveal') p = api('reveal', { id: id, path: el.dataset.path });
+      else if (act === 'del') {
+        delFile(id, el.dataset.name,
+                parseInt(el.dataset.size || '0', 10));
+        return;
+      }
+      else return;
+      p.then(function (r) {
+        if (r && r.ok === false) toast(r.err || '操作失败');
+        refresh();
+      }).catch(function (e) { toast('请求失败：' + e.message); });
+    };
+  });
+}
+
+function refresh() {
+  api('state').then(function (r) {
+    if (!r.ok) return;
+    S.tier = r.tier; S.tiers = r.tiers;
+    S.conns = r.conns; S.part_mb = r.part_mb; S.tokens = r.tokens;
+    S.logged = !!r.user;
+    S.demo = !!r.demo;
+    document.getElementById('userTxt').textContent = r.user || '未登录';
+    document.getElementById('userChip').classList.toggle('bad', !r.logged);
+    if (r.outdir) {
+      document.getElementById('dpathTxt').textContent = r.outdir;
+      document.getElementById('dpathTxt').title = r.outdir_note || r.outdir;
+      // 只提示一次：refresh 每 600ms 跑一遍，每次都弹会糊住整个界面
+      if (r.outdir_note && S.outNote !== r.outdir_note) {
+        S.outNote = r.outdir_note;
+        toast(r.outdir_note);
+      }
+    }
+    document.getElementById('capTxt').textContent = r.cap_total ? (r.cap_used + ' / ' + r.cap_total) : '--';
+    document.getElementById('capBar').style.width = r.cap_pct ? (r.cap_pct + '%') : '0%';
+    var bn = document.getElementById('banner');
+    if (r.banner) { bn.textContent = r.banner; bn.classList.add('on'); }
+    else { bn.classList.remove('on'); }
+    if (r.snap) renderSnap(r.snap);
+    if (!document.querySelector('.tier.on')) buildTiers();
+    else if (document.querySelector('.tier.on').dataset.k !== S.tier) buildTiers();
+  }).catch(function () {});
+}
+
+/* ---------------- 删本地文件 ---------------- */
+var DEL = { id: '', name: '' };
+
+function delFile(id, name, size) {
+  if (!id) { toast('这条记录没有任务 id，删不了'); return; }
+  DEL.id = id; DEL.name = name || '';
+  document.getElementById('delName').textContent =
+    (name || '这个文件') + (size ? '　·　' + human(size) : '');
+  document.getElementById('delModal').classList.add('on');
+}
+
+document.getElementById('delNo').onclick = function () {
+  document.getElementById('delModal').classList.remove('on');
+};
+document.getElementById('delModal').onclick = function (ev) {
+  if (ev.target && ev.target.id === 'delModal') this.classList.remove('on');
+};
+document.getElementById('delGo').onclick = function () {
+  var go = this;
+  go.disabled = true;
+  api('delete', { id: DEL.id }).then(function (r) {
+    go.disabled = false;
+    document.getElementById('delModal').classList.remove('on');
+    if (r.ok) {
+      toast(r.missing ? ('列表里已经没有这条文件了：' + (r.name || DEL.name))
+                      : ('已删除 ' + (r.name || DEL.name) + '，释放 ' + human(r.freed || 0)));
+      refresh();
+    } else {
+      toast(r.err || '删除失败');
+    }
+  }).catch(function (e) {
+    go.disabled = false;
+    toast('请求失败：' + e.message);
+  });
+};
+
+/* ---------------- wiring ---------------- */
+document.getElementById('tcApply').onclick = applyCustom;
+document.getElementById('fab').onclick = function () { document.getElementById('drawer').classList.add('on'); };
+document.getElementById('dclose').onclick = function () { document.getElementById('drawer').classList.remove('on'); };
+document.getElementById('btnReload').onclick = function () { load(); refresh(); toast('已刷新'); };
+document.getElementById('btnFolder').onclick = function () {
+  this.disabled = true;
+  api('open_dir', {}).then(function (r) {
+    if (!r.ok) openDirFail(r);
+  }).catch(function (e) { toast('请求失败：' + e.message); });
+  setTimeout(function () { document.getElementById('btnFolder').disabled = false; }, 800);
+};
+document.getElementById('dpath').onclick = function (ev) {
+  if (ev.target && ev.target.id === 'dpathOpen') return;   // 「打开」按钮自己处理
+  api('pick_dir', {}).then(function (r) {
+    if (r.ok) { document.getElementById('dpathTxt').textContent = r.outdir; toast('保存到：' + r.outdir); }
+  });
+};
+function copyText(t) {
+  if (!t) return;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(t).catch(function () { fallbackCopy(t); });
+  } else { fallbackCopy(t); }
+}
+function fallbackCopy(t) {
+  var ta = document.createElement('textarea');
+  ta.value = t; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); } catch (e) {}
+  document.body.removeChild(ta);
+}
+
+/* 打不开资源管理器时（受限令牌 / 安全软件拦 ShellExecute），至少让用户
+   在程序里看到目录里有什么，并且能把路径复制走 —— 否则这个按钮就是死的。 */
+function openDirFail(r) {
+  var p = r.outdir || document.getElementById('dpathTxt').textContent || '';
+  document.getElementById('dirWhy').textContent =
+    (r.err || '打不开文件管理器') + '。下面直接列出这个目录的内容：';
+  document.getElementById('dirPath').textContent = p || '(未知)';
+  var box = document.getElementById('dirList');
+  box.innerHTML = '<div><span style="color:var(--text3)">读取中…</span></div>';
+  document.getElementById('dirModal').classList.add('on');
+  api('dir_list', { limit: 80 }).then(function (d) {
+    if (!d.ok) {
+      box.innerHTML = '<div><span style="color:var(--err)">' + esc(d.err || '读不了目录') + '</span></div>';
+      return;
+    }
+    if (!d.entries || !d.entries.length) {
+      box.innerHTML = '<div><span style="color:var(--text3)">目录是空的 —— 还没有文件下到这里</span></div>';
+      return;
+    }
+    box.innerHTML = d.entries.map(function (e) {
+      return '<div>' + icon(kindOf(e.name, e.dir)) +
+        '<span>' + esc(e.name) + '</span><em>' +
+        (e.dir ? '文件夹' : human(e.size)) + '</em></div>';
+    }).join('');
+  }).catch(function (e) {
+    box.innerHTML = '<div><span style="color:var(--err)">' + esc(e.message) + '</span></div>';
+  });
+}
+document.getElementById('dirOk').onclick = function () {
+  document.getElementById('dirModal').classList.remove('on');
+};
+document.getElementById('dirModal').onclick = function (ev) {
+  if (ev.target && ev.target.id === 'dirModal') this.classList.remove('on');
+};
+document.getElementById('dirCopy').onclick = function () {
+  copyText(document.getElementById('dirPath').textContent);
+  toast('路径已复制（按 Win+E 打开资源管理器，粘到地址栏）');
+};
+document.getElementById('dpathOpen').onclick = function (ev) {
+  ev.stopPropagation();
+  api('open_dir', {}).then(function (r) { if (!r.ok) openDirFail(r); });
+};
+Array.prototype.forEach.call(document.querySelectorAll('.dtabs span'), function (sp) {
+  sp.onclick = function () {
+    S.tab = sp.dataset.tab;
+    Array.prototype.forEach.call(document.querySelectorAll('.dtabs span'), function (o) {
+      o.classList.toggle('on', o === sp);
+    });
+    if (S.snap) renderSnap(S.snap);
+  };
+});
+document.getElementById('capTxt').parentNode.parentNode.onclick = function () {
+  var t = document.getElementById('capTxt').textContent;
+  toast(t && t !== '--' ? ('网盘容量 ' + t) : '还没拿到容量，登录后会自动刷新');
+};
+document.getElementById('btnAll').onclick = function () {
+  S.entries.forEach(function (e) { S.picked[e.fid] = { fid: e.fid, name: e.name, size: e.size, dir: e.is_dir }; });
+  render();
+};
+document.getElementById('btnNone').onclick = function () { S.picked = {}; render(); };
+document.getElementById('btnDl').onclick = function () {
+  var items = Object.keys(S.picked).map(function (k) { return S.picked[k]; });
+  if (!items.length) return;
+  var btn = this; btn.disabled = true; btn.textContent = '正在加入…';
+  api('add', { items: items, dir: S.path[S.path.length - 1].fid }).then(function (r) {
+    btn.textContent = '下载所选';
+    if (r.ok) {
+      S.picked = {}; render();
+      document.getElementById('drawer').classList.add('on');
+      toast('已加入 ' + r.added + ' 个任务');
+      refresh();
+    } else { toast('加入失败：' + (r.err || '')); }
+  }).catch(function (e) { btn.textContent = '下载所选'; toast('请求失败：' + e.message); });
+};
+document.getElementById('btnPause').onclick = function () {
+  var p = this.textContent === '暂停';
+  api(p ? 'pause' : 'resume', {}).then(function () {
+    document.getElementById('btnPause').textContent = p ? '继续' : '暂停';
+  });
+};
+document.getElementById('btnClear').onclick = function () { api('clear', {}).then(refresh); };
+
+/* ---------------- 视频预览（边下边播） ---------------- */
+var PV = { fid: '', timer: 0, size: 0 };
+
+function openPreview(fid, name, size) {
+  if (!S.logged && !S.demo) { toast('先登录再预览'); openLogin(); return; }
+  PV.fid = fid; PV.size = size || 0;
+  document.getElementById('pvName').textContent = name || '预览';
+  document.getElementById('pvStat').textContent = '正在准备…';
+  document.getElementById('pvBar').style.width = '0%';
+  document.getElementById('pv').classList.add('on');
+  var v = document.getElementById('pvVideo');
+  v.pause(); v.removeAttribute('src'); v.load();
+  // 关键：src 与 play() 必须在这次点击的手势里同步发出。等 api('media') 回来再 play，
+  // 手势早就过期，Chromium 会把 play() 拒掉 —— 表现就是弹层里一直转圈、停在 0:00。
+  // 列表行本来就带 size，不需要先问服务端。
+  v.src = '/media/' + encodeURIComponent(fid) + '?size=' + (PV.size || 0) +
+          '&name=' + encodeURIComponent(name || '');
+  var pr = v.play();
+  if (pr && pr.catch) {
+    pr.catch(function () {
+      document.getElementById('pvStat').textContent = '点一下画面开始播放';
+    });
+  }
+  api('media?fid=' + encodeURIComponent(fid) + '&size=' + (PV.size || 0)).then(function (r) {
+    if (!r.ok) {
+      document.getElementById('pvStat').textContent = r.err || '打不开';
+      toast('预览失败：' + (r.err || ''));
+      return;
+    }
+    PV.size = r.size || PV.size;
+    startPvTimer();
+  }).catch(function () {
+    document.getElementById('pvStat').textContent = '请求失败';
+  });
+}
+
+function startPvTimer() {
+  stopPvTimer();
+  PV.timer = setInterval(function () {
+    if (!PV.fid) return;
+    api('media_stat?fid=' + encodeURIComponent(PV.fid)).then(function (r) {
+      var st = r.stat;
+      if (!st) return;
+      document.getElementById('pvBar').style.width = Math.min(100, st.pct) + '%';
+      document.getElementById('pvStat').textContent =
+        '已缓存 ' + human(st.got) + ' / ' + human(st.size) +
+        ' · ' + st.speed.toFixed(2) + ' MB/s' + (st.failed ? ' · ' + st.failed + ' 片失败' : '');
+    }).catch(function () {});
+  }, 700);
+}
+
+function stopPvTimer() {
+  if (PV.timer) { clearInterval(PV.timer); PV.timer = 0; }
+}
+
+function closePreview() {
+  stopPvTimer();
+  var v = document.getElementById('pvVideo');
+  v.pause(); v.removeAttribute('src'); v.load();
+  document.getElementById('pv').classList.remove('on');
+  if (PV.fid) { api('media_stop', { fid: PV.fid }); PV.fid = ''; }
+}
+
+document.getElementById('pvClose').onclick = closePreview;
+// 画面被自动播放策略拦住时，点一下就开（这也算一次真实手势）
+document.getElementById('pvVideo').onclick = function () {
+  var v = document.getElementById('pvVideo');
+  if (v.paused) { v.play().catch(function () {}); }
+};
+document.getElementById('pv').onclick = function (e) {
+  if (e.target.id === 'pv') closePreview();
+};
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape' && document.getElementById('pv').classList.contains('on')) closePreview();
+});
+
+/* ---------------- login ---------------- */
+var LOGIN_PORT = 0;
+var LN_TRIES = 0;
+
+function openLogin() {
+  // 每次打开都清掉上一次失败留下的红字，否则截图/演示时会把旧错误带出来
+  var h = document.getElementById('lnHint');
+  if (h) h.textContent = '点左边打开一个独立浏览器窗口，扫码登录；回来后点右边取 Cookie';
+  document.getElementById('loginModal').classList.add('on');
+}
+function loginErr(s) {
+  s = String(s || '');
+  if (/URLError|10061|refused|积极拒绝/i.test(s)) return '登录窗口已经关了，重新点「打开登录窗口」';
+  if (/Timeout|timed out|超时/i.test(s)) return '窗口还在加载，再等一下自动重试';
+  if (/还没读到|还没打开/i.test(s)) return s;
+  return s || '未知错误';
+}
+
+// 登录窗口是异步起的（浏览器冷启动要一两秒），所以取 Cookie 用轮询重试，
+// 不再让用户看到「还没成功」然后自己反复点。
+function tryFetchCookie(round) {
+  var h = document.getElementById('lnHint');
+  api('login_done', { port: LOGIN_PORT }).then(function (r) {
+    if (r.ok) {
+      h.textContent = '登录成功：' + (r.user || '已登录');
+      document.getElementById('loginModal').classList.remove('on');
+      toast('登录成功'); refresh(); load();
+      return;
+    }
+    if (round > 0) {
+      h.textContent = '正在读取登录状态…（' + (4 - round) + '/4）';
+      setTimeout(function () { tryFetchCookie(round - 1); }, 1200);
+      return;
+    }
+    h.textContent = '还没成功：' + loginErr(r.err);
+  });
+}
+
+document.getElementById('userChip').onclick = openLogin;
+document.getElementById('loginModal').onclick = function (e) {
+  if (e.target.id === 'loginModal') e.target.classList.remove('on');
+};
+document.getElementById('lnOpen').onclick = function () {
+  var h = document.getElementById('lnHint');
+  h.textContent = '正在打开登录窗口…';
+  api('login', {}).then(function (r) {
+    if (r.ok) {
+      LOGIN_PORT = r.port || 0;
+      h.textContent = r.reused ? '登录窗口已切回夸克，登录后点右边按钮'
+                               : '登录窗口已打开，扫码登录后点右边按钮';
+    } else {
+      h.textContent = '打开失败：' + loginErr(r.err);
+    }
+  });
+};
+document.getElementById('lnDone').onclick = function () {
+  var h = document.getElementById('lnHint');
+  h.textContent = '正在从浏览器取 Cookie…';
+  LN_TRIES = 4;
+  tryFetchCookie(LN_TRIES);
+};
+document.getElementById('lnPasteGo').onclick = function () {
+  var v = document.getElementById('lnPaste').value.trim();
+  if (!v) return;
+  api('cookie', { cookie: v }).then(function (r) {
+    var h = document.getElementById('lnHint');
+    if (r.ok) {
+      h.textContent = '已应用，账号：' + (r.user || '已登录');
+      document.getElementById('loginModal').classList.remove('on');
+      toast('Cookie 已生效'); refresh(); load();
+    } else { h.textContent = 'Cookie 无效：' + (r.err || ''); }
+  });
+};
+
+/* ---------------- 导入链接 ---------------- */
+var IM = { timer: 0, busy: false, list: [], all: true, sel: {}, trunc: false };
+function imShow(on) {
+  document.getElementById('importModal').classList.toggle('on', !!on);
+  if (on) { setTimeout(function () { document.getElementById('imLink').focus(); }, 30); }
+}
+document.getElementById('btnImport').onclick = function () {
+  document.getElementById('imHint').textContent = '';
+  imShow(true);
+};
+document.getElementById('importModal').onclick = function (e) {
+  if (e.target.id === 'importModal') { imShow(false); stopImPoll(); }
+};
+
+function stopImPoll() { clearInterval(IM.timer); IM.timer = 0; IM.busy = false; }
+
+function fmtBytes(n) {
+  n = Number(n) || 0;
+  var u = ['B', 'KB', 'MB', 'GB', 'TB'], i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return (i === 0 ? n.toFixed(0) : n.toFixed(1)) + ' ' + u[i];
+}
+
+function imRenderSum(d) {
+  var el = document.getElementById('imSum');
+  if (!d || !d.files) { el.innerHTML = ''; return; }
+  var lines = ['共 <b>' + d.files + '</b> 个文件，<b>' + fmtBytes(d.bytes) + '</b>'];
+  if (d.direct_files) {
+    lines.push('<b>' + d.direct_files + '</b> 个（' + fmtBytes(d.direct_bytes) +
+      '）直接下载，不转存、不占网盘空间');
+    lines.push('注意：免登录这条通道是限速的（约 0.3 MB/s），' +
+      '登录后同样的文件走加速通道能到几十 MB/s');
+  }
+  if (d.save_files) {
+    lines.push(d.logged
+      ? '<b>' + d.save_files + '</b> 个（' + fmtBytes(d.save_bytes) +
+        '）走加速通道：先转存进你的网盘，下完自动删掉'
+      : '<b>' + d.save_files + '</b> 个（' + fmtBytes(d.save_bytes) +
+        '）超过免登录直下上限，需要先转存进你的网盘');
+    if (d.cap_total) {
+      lines.push('网盘可用 <b>' + fmtBytes(d.cap_free) + '</b> / 总量 ' + fmtBytes(d.cap_total));
+    } else {
+      lines.push('还没拿到网盘容量，分批方案会在真正转存时按实际空间再算');
+    }
+    if (d.batches > 1) lines.push('超过可用空间，会分 <b>' + d.batches + '</b> 批：转存一批 → 下完 → 删 → 下一批');
+  }
+  if (!d.logged && d.save_files) lines.push('这些小文件现在就能下；大文件要先点右上角「登录」');
+  if (d.truncated) {
+    lines.push('分享里文件太多，下面只列了前 <b>' + d.listed + '</b> 个用来勾选；' +
+      '没列出来的会按「全选」一起下');
+  }
+  if (d.files) lines.push('下面可以逐个勾选要下的文件');
+  el.innerHTML = lines.join('<br>');
+  imRenderFiles(d);
+  var warn = document.getElementById('imWarn');
+  if (d.too_big && d.too_big.length) {
+    warn.style.display = '';
+    warn.textContent = '有 ' + d.too_big.length + ' 个文件单个就超过可用空间，这些会跳过：' +
+      d.too_big.slice(0, 3).map(function (x) { return x.name; }).join('、');
+  } else { warn.style.display = 'none'; }
+}
+
+// 清单与勾选。全选状态下不传 pick，让后端按「全都要」处理：文件特别多的时候
+// 界面只列了前 500 个，用 fid 全选会把没列出来的那些漏掉。
+function imRenderFiles(d) {
+  var fl = document.getElementById('imFiles');
+  var sel = document.getElementById('imSel');
+  IM.list = (d.list || []).slice();
+  IM.all = true;
+  IM.sel = {};
+  IM.trunc = !!d.truncated;
+  if (!IM.list.length) {
+    fl.style.display = 'none';
+    sel.style.display = 'none';
+    return;
+  }
+  fl.style.display = '';
+  sel.style.display = '';
+  fl.innerHTML = IM.list.map(function (f, i) {
+    var tag = f.direct ? '<i class="dv">直下</i>' : '<i class="sv">转存</i>';
+    return '<div data-i="' + i + '">' +
+      '<label><input type="checkbox" class="impck" checked data-i="' + i + '">' +
+      '<span>' + esc(f.name) + tag + '</span></label>' +
+      '<em>' + fmtBytes(f.size) + '</em></div>';
+  }).join('');
+  Array.prototype.forEach.call(fl.querySelectorAll('input.impck'), function (ck) {
+    ck.onchange = function () {
+      var i = Number(ck.getAttribute('data-i'));
+      IM.sel[i] = !!ck.checked;
+      // 用户只要手动改过一个，就不再是「全都要」：IM.all 是「连清单之外的一起要」
+      // 的标记，不是「界面上每个都勾上了」。混在一起会让取消勾选后仍然按全选下发。
+      IM.all = false;
+      ck.parentNode.parentNode.classList.toggle('off', !ck.checked);
+      imSyncSel();
+    };
+  });
+  imSyncSel();
+}
+
+// 勾选状态 → 按钮文案 + pick 参数
+function imSelStat() {
+  var n = IM.list.length, k = 0, b = 0;
+  for (var i = 0; i < n; i++) {
+    if (IM.all || IM.sel[i] !== false) { k++; b += (IM.list[i].size || 0); }
+  }
+  // 清单里全勾上 = 用户就是要全部，这时下发 pick=null，让后端自己列一遍，
+  // 文件数超过清单上限（500）时没列出来的那些才不会漏掉。
+  return { n: n, k: k, bytes: b, all: (k === n) };
+}
+
+function imSyncSel() {
+  var st = imSelStat();
+  document.getElementById('imSelCnt').textContent =
+    '已选 ' + st.k + ' / ' + st.n + ' 个 · ' + fmtBytes(st.bytes);
+  var go = document.getElementById('imGo');
+  go.disabled = st.k === 0;
+  go.textContent = st.k === st.n ? '开始下载' : '下载选中的 ' + st.k + ' 个';
+}
+
+function imPick() {
+  // 返回 null = 全都要（含没列出来的），否则返回选中的 fid 数组
+  if (imSelStat().all) return null;
+  var out = [];
+  for (var i = 0; i < IM.list.length; i++) {
+    if (IM.all || IM.sel[i] !== false) out.push(IM.list[i].fid);
+  }
+  return out;
+}
+
+function imSetAll(on) {
+  IM.all = !!on;
+  IM.sel = {};
+  if (!on) { for (var j = 0; j < IM.list.length; j++) IM.sel[j] = false; }
+  var fl = document.getElementById('imFiles');
+  Array.prototype.forEach.call(fl.querySelectorAll('input.impck'), function (ck) {
+    ck.checked = !!on;
+    ck.parentNode.parentNode.classList.toggle('off', !on);
+  });
+  imSyncSel();
+}
+
+document.getElementById('imAll').onclick = function () { imSetAll(true); };
+document.getElementById('imNone').onclick = function () { imSetAll(false); };
+
+function imLinkVal() {
+  return (document.getElementById('imLink').value || '').trim();
+}
+
+document.getElementById('imCheck').onclick = function () {
+  var v = imLinkVal();
+  var h = document.getElementById('imHint');
+  if (!v) { h.textContent = '先把分享链接贴进来'; return; }
+  h.textContent = '正在读取分享内容…';
+  api('import_preview', { link: v }).then(function (r) {
+    if (!r.ok) { h.textContent = '读不到：' + (r.err || '链接无效'); return; }
+    h.textContent = r.passcode ? '链接有效（已用提取码校验）' : '链接有效（无需提取码）';
+    imRenderSum(r);
+  }).catch(function (e) { h.textContent = '请求失败：' + e; });
+};
+
+document.getElementById('imGo').onclick = function () {
+  var v = imLinkVal();
+  var h = document.getElementById('imHint');
+  if (!v) { h.textContent = '先把分享链接贴进来'; return; }
+  var del = document.getElementById('imDel').checked;
+  var pick = imPick();
+  if (pick && !pick.length) { h.textContent = '先勾上至少一个文件'; return; }
+  h.textContent = '正在启动…';
+  document.getElementById('imBarBox').style.display = '';
+  api('import_start', { link: v, delete: del, pick: pick }).then(function (r) {
+    if (!r.ok) { h.textContent = '启动失败：' + (r.err || ''); return; }
+    IM.busy = true;
+    h.textContent = '已开始，可以关掉这个窗口，进度在右侧抽屉里';
+    document.getElementById('imStop').style.display = '';
+    stopImPoll();
+    IM.timer = setInterval(imPoll, 700);
+    imPoll();
+  }).catch(function (e) { h.textContent = '请求失败：' + e; });
+};
+
+document.getElementById('imStop').onclick = function () {
+  api('import_cancel', {}).then(function () {
+    document.getElementById('imHint').textContent = '正在停止，等这一批收尾…';
+  });
+};
+
+function imPoll() {
+  api('import_state').then(function (r) {
+    if (!r || !r.ok) return;
+    var h = document.getElementById('imHint');
+    var bar = document.getElementById('imBar');
+    var box = document.getElementById('imBarBox');
+    if (r.err) { h.textContent = '出错：' + r.err; }
+    else if (r.msg) { h.textContent = r.msg; }
+    if (r.files) {
+      var pct = r.done_bytes ? (r.done_bytes / Math.max(1, r.bytes) * 100) : 0;
+      box.style.display = '';
+      bar.style.width = Math.max(0, Math.min(100, pct)).toFixed(1) + '%';
+      document.getElementById('imSum').innerHTML =
+        '已完成 <b>' + (r.done_files || 0) + '</b> / ' + r.files + ' 个文件 · ' +
+        fmtBytes(r.done_bytes) + ' / ' + fmtBytes(r.bytes) +
+        (r.batches > 1 ? '<br>第 <b>' + (r.batch || 0) + '</b> / ' + r.batches + ' 批' : '');
+    }
+    if (!r.busy) {
+      stopImPoll();
+      document.getElementById('imStop').style.display = 'none';
+      if (r.phase === 'done' && !r.err) { toast(r.msg || '导入完成'); }
+      refresh();
+    }
+  }).catch(function () {});
+}
+
+if (location.search.indexOf('demo=1') >= 0) {
+  api('demo', { on: true }).then(function () { S.logged = true; load(); });
+}
+
+buildNav();
+buildTiers();
+load();
+refresh();
+setInterval(refresh, 600);
+</script>
+</body>
+</html>

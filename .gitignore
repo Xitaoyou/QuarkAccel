@@ -1,4 +1,8 @@
-# 只发布构建产物与文档
-*.py
-*.spec
+# 构建产物与本地环境不进仓库
 __pycache__/
+*.pyc
+build/
+dist/
+*.log
+.venv/
+.venv-qk/

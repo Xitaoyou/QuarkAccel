@@ -229,9 +229,41 @@ QuarkAccel 在本地起一个支持 Range 的 HTTP 服务，`<video>` 请求本�
 
 ## 技术栈
 
-Python 3.12 + 原生 `http.server` + Edge（`--app` 模式当壳）+ 原生 HTML/CSS/JS。
+Python 3.10+ + 原生 `http.server` + Edge（`--app` 模式当壳）+ 原生 HTML/CSS/JS。
 没有 Electron、没有 WebView2 的 python binding、没有前端框架。
 打包用 PyInstaller onefile，成品约 10.2 MB。
+
+---
+
+## 自己编译 / 云端构建
+
+仓库结构：
+
+```
+.github/workflows/build-windows-x64.yml   # 云端构建（windows-latest, Python 3.10 x64）
+src/              源码
+  app.py          tkinter 版外壳（旧界面）
+  shell/app2.py   Edge --app 外壳版主程序
+  shell/ui.html   整个界面（单文件 HTML+CSS+JS，无构建步骤）
+  shell/engine.py 下载队列引擎
+  shell/importer.py 分享链接导入
+  quark_core.py   接口 + 分片下载器 + 完整性校验
+  README.md       开发文档（架构、踩过的坑、验证清单）
+```
+
+**想直接拿 exe**：打开 [Actions](https://github.com/Xitaoyou/QuarkAccel/actions/workflows/build-windows-x64.yml)，
+点最近一次成功的 run，页面底部 Artifacts 里有 `QuarkAccel-win-x64.zip`，解压就是 exe。
+
+**想本地编**（Windows，Python 3.10+）：
+
+```bat
+pip install requests pyinstaller
+cd src\shell
+python build2.py
+```
+
+产物在 `src/shell/dist/QuarkAccel.exe`。工作流里做的事和这三行一样，只是多跑了一遍
+`compileall` 和 PE 头校验。
 
 ---
 
@@ -242,7 +274,7 @@ Python 3.12 + 原生 `http.server` + Edge（`--app` 模式当壳）+ 原生 HTML
 - 「打开下载目录」在受限令牌下（比如从某些 IDE、计划任务或沙箱里启动）会依次试 `ShellExecute` / `explorer` / `cmd start` / PowerShell，并用窗口枚举确认真的弹出来了；四种都不行就退化成弹窗列出目录内容 + 完整路径 + 复制路径按钮，结论会缓存住，第二次点不会再让你干等；
 - 工具本身**不含任何账号信息**，用你自己的夸克账号登录，速度上限取决于你的账号类型和网络；
 - 个人项目，界面和交互按自己的使用习惯做的，不承诺兼容所有版本；
-- 本项目**只发布可执行文件和文档，不公开源码**。
+- 源码在仓库的 `src/`（本文件描述的产品行为都对应得到具体实现），欢迎对照读；只把 `dist/` 的构建产物当最终交付。
 
 ---
 
