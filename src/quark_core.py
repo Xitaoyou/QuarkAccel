@@ -89,12 +89,12 @@ def qbad_path(path):
     return resolve_path(path) + ".qbad"
 
 
-def file_ok(api, fid, path, size, deep=False, link_fn=None):
+def file_ok(api, fid, path, size, deep=False, link_fn=None, url=None):
     """判断本地文件是否真的完整。返回 (ok, why)。
 
     只比大小是不够的：下载器会先把文件预分配成满尺寸的全零，
     中途失败就留下一个"大小正确、内容全零"的假文件。
-    这里额外比头尾各 64KB（deep=True 时逐 1MB 全比）。
+    这里额外比头尾各 32KB（并发拉取，deep=True 时逐 1MB 全比）。
     """
     path = resolve_path(path)
     if not os.path.exists(path):
@@ -104,12 +104,13 @@ def file_ok(api, fid, path, size, deep=False, link_fn=None):
         return False, "大小不符 %d/%d" % (real, size)
     if os.path.exists(qbad_path(path)):
         return False, "上次下载失败留下的标记(.qbad)"
-    try:
-        url = link_fn() if link_fn else api.download_url(fid)
-        if not url:
-            return False, "取不到直链"
-    except Exception as e:
-        return False, "取链失败 %s" % str(e)[:40]
+    if not url:
+        try:
+            url = link_fn() if link_fn else api.download_url(fid)
+            if not url:
+                return False, "取不到直链"
+        except Exception as e:
+            return False, "取链失败 %s" % str(e)[:40]
     if size <= 0:
         return True, "空文件"
     if deep:
@@ -121,19 +122,42 @@ def file_ok(api, fid, path, size, deep=False, link_fn=None):
             b = min(a + (1 << 20), size) - 1
             spans.append((a, b))
             a = b + 1
-    elif size <= 131072:
+    elif size <= 65536:
         spans = [(0, size - 1)]
     else:
-        spans = [(0, 65535), (size - 65536, size - 1)]
-    for a, b in spans:
-        remote = _rng_get(api, url, a, b)
-        if remote is None:
-            return False, "远端取不到，无法校验 @%d" % a
-        with open(path, "rb") as f:
-            f.seek(a)
-            local = f.read(len(remote))
-        if local != remote:
-            return False, ("全零空洞 @%d" % a) if _all_zero(local) else ("内容不符 @%d" % a)
+        spans = [(0, 32767), (size - 32768, size - 1)]
+
+    # 头尾两段并发取，把收尾校验延迟减半
+    if not deep and len(spans) > 1:
+        remotes = [None] * len(spans)
+
+        def _fetch(idx, a0, b0):
+            remotes[idx] = _rng_get(api, url, a0, b0)
+
+        ts = [threading.Thread(target=_fetch, args=(idx, a, b), daemon=True)
+              for idx, (a, b) in enumerate(spans)]
+        for t in ts:
+            t.start()
+        for t in ts:
+            t.join(timeout=65)
+        for (a, b), remote in zip(spans, remotes):
+            if remote is None:
+                return False, "远端取不到，无法校验 @%d" % a
+            with open(path, "rb") as f:
+                f.seek(a)
+                local = f.read(len(remote))
+            if local != remote:
+                return False, ("全零空洞 @%d" % a) if _all_zero(local) else ("内容不符 @%d" % a)
+    else:
+        for a, b in spans:
+            remote = _rng_get(api, url, a, b)
+            if remote is None:
+                return False, "远端取不到，无法校验 @%d" % a
+            with open(path, "rb") as f:
+                f.seek(a)
+                local = f.read(len(remote))
+            if local != remote:
+                return False, ("全零空洞 @%d" % a) if _all_zero(local) else ("内容不符 @%d" % a)
     # 内容抽查通过；残留的 .qstate 只是上次没清掉，顺手删掉
     if os.path.exists(path + ".qstate"):
         try:
@@ -179,7 +203,8 @@ class Api:
         # 超出部分每次都要重新握手，等于把并发优势全丢掉
         try:
             from requests.adapters import HTTPAdapter
-            ad = HTTPAdapter(pool_connections=64, pool_maxsize=256,
+            # 连接池上限必须 >= 最大并发数（384），否则超出的连接用完即弃、每次重新握手
+            ad = HTTPAdapter(pool_connections=64, pool_maxsize=512,
                              max_retries=0, pool_block=False)
             self.s.mount("https://", ad)
             self.s.mount("http://", ad)
@@ -649,7 +674,8 @@ class Downloader:
     """切片队列 + 多 token 池 + 多线程。"""
 
     def __init__(self, api, task, out, conns=384, part_mb=1, tokens=32,
-                 resume=True, progress=None, link_fn=None, adaptive=False):
+                 resume=True, progress=None, link_fn=None, adaptive=False,
+                 gov_start=None):
         # link_fn: 自定义取链（分享域直下用）。默认走自己网盘的 /file/download；
         # 分享链一旦过期/限流会报 23018，这时拿到的是空串，_next_link 会抛出去让上层决定
         self.api, self.task, self.out = api, task, out
@@ -667,6 +693,9 @@ class Downloader:
         self.lock = threading.Lock()
         self.done = set()
         self.fail = []
+        self.inflight = {}       # chunk_idx -> 开始下载时刻（用于尾部慢片抢占）
+        self._hedged = set()     # 已被投机重试认领的慢片，避免多路重复抢同一片
+        self._chunk_times = []   # 最近分片耗时样本（秒）
         self.bytes_done = 0
         self.bytes_rx = 0
         self.links = []
@@ -676,8 +705,9 @@ class Downloader:
         # 为什么默认不开自适应：起手 16 条要爬好几个窗口才到最优，几十 MB 的小文件
         # 还没爬到就下完了，用户看到的就是「比之前慢」。
         self.adaptive = bool(adaptive)
+        st_conns = min(self.conns, int(gov_start)) if gov_start else min(self.conns, 16)
         self.gov = Governor(self.conns, lo=min(8, self.conns),
-                            start=min(self.conns, 16), on=self.adaptive)
+                            start=st_conns, on=self.adaptive)
         self._gov_t = 0.0
         self._gov_b = 0
         self.state = out + ".qstate"
@@ -797,118 +827,283 @@ class Downloader:
             pass
 
     # -- 线程
-    def _worker(self, todo):
+    def _worker(self, todo, allow_hedge=True):
         try:
-            self._worker_inner(todo)
+            self._worker_inner(todo, allow_hedge=allow_hedge)
         except BaseException as e:
             with self.lock:
                 self.fail.append((-1, "worker崩: %s: %s" % (type(e).__name__, str(e)[:60])))
 
-    def _worker_inner(self, todo):
-        s = self.api.s
-        while not self.stop.is_set():
-            try:
-                i, a, b = todo.get_nowait()
-            except queue.Empty:
-                return
-            want = b - a + 1
-            for attempt in range(4):
-                part_got = 0      # 本次 attempt 已写的字节；失败要回滚，否则速度虚高
-                if self.stop.is_set():
-                    return
-                url = None
-                fd = -1
-                gated = False
-                r = None
-                try:
-                    if not self.gov.acquire(self.stop):
-                        return
-                    gated = True
-                    url = self._next_link()
-                    h = {"Range": "bytes=%d-%d" % (a, b), "Accept-Encoding": "identity"}
-                    ck = self._ck(refresh=(attempt > 0))
-                    if ck:
-                        # 直链要 __sdid/__pugs，缺了一律 412；Api.s 上那条空 Cookie
-                        # 会盖掉 cookie jar，必须显式给值
-                        h["Cookie"] = ck
-                    r = s.get(url, headers=h, timeout=(15, 60), stream=True)
-                    if r.status_code == 412:
-                        # 412 = Cookie 里缺 __sdid/__pugs 或已过期：丢链接、重取 Cookie 再来
-                        self._drop_link(url)
-                        self._ck(refresh=True)
-                        time.sleep(0.3 * (attempt + 1))
-                        continue
-                    if r.status_code not in (200, 206):
-                        raise QuarkError("HTTP %d" % r.status_code)
-                    if r.status_code == 200 and a > 0:
-                        # 服务端忽略 Range 直接回整文件：照收会把文件开头写到偏移 a 处，
-                        # 片计数全绿但内容错位（静默损坏），必须当失败处理
-                        raise QuarkError("忽略 Range(200)")
-                    # 边收边写：每片自己开 fd 写自己那段偏移，不抢锁、不在内存里攒整片。
-                    # 自定义档 32MB 片 × 384 连接如果都缓在内存里，峰值能到 12GB。
-                    fd = os.open(self.out, os.O_RDWR | getattr(os, "O_BINARY", 0))
-                    os.lseek(fd, a, os.SEEK_SET)
-                    got = 0
-                    for blk in r.iter_content(1 << 16):
-                        if self.stop.is_set():
-                            raise QuarkError("已取消")
-                        n = len(blk)
-                        if got + n > want:
-                            blk = blk[:want - got]
-                            n = want - got
-                        if n:
-                            # os.write 可能只写一部分（大块 + 慢盘），必须写满
-                            off = 0
-                            while off < n:
-                                off += os.write(fd, blk[off:n])
-                            got += n
-                            part_got += n
-                            # 边收边累加：界面上的速度/进度才是连续的。
-                            # 只在整片完成时加，1MB 片会让数字每秒跳两次，看着跟实际差很远。
-                            with self.lock:
-                                self.bytes_done += n
-                                # bytes_rx 只增不减：重试回滚 bytes_done 时它也继续累加，
-                                # 界面用它算瞬时速度就不会因为一次回滚瞬间掉到 0
-                                self.bytes_rx += n
-                        if got >= want:
-                            break
-                    if got < want:
-                        raise QuarkError("短读 %d/%d" % (got, want))
-                    with self.lock:
-                        self.done.add(i)
-                    break
-                except Exception as e:
-                    if part_got:
-                        # 这一 attempt 收到的字节要退回，重试会从头重收这片
-                        with self.lock:
-                            self.bytes_done = max(0, self.bytes_done - part_got)
-                    if "412" in str(e):
-                        self._drop_link(url)
-                    # 连接超时/被重置是并发过高的直接信号：立刻回撤闸门，
-                    # 别让剩下的线程继续排队撞同一堵墙
-                    if _is_conn_err(e):
-                        self.gov.penalty()
-                    else:
-                        self.gov.reward()
-                    time.sleep(0.4 * (attempt + 1))
-                finally:
-                    # 提前 break 的响应体没读完，不显式关掉的话 urllib3 会把连接丢掉
-                    # 而不是还回池子，等于每片都重新握手
-                    try:
-                        r.close()
-                    except Exception:
-                        pass
-                    r = None
-                    if gated:
-                        self.gov.release()
-                    if fd >= 0:
-                        try:
-                            os.close(fd)
-                        except OSError:
-                            pass
+    def _pick_hedge(self):
+        """尾部慢片抢占：队列已空时，挑一条耗时过长的在飞分片做投机重试，消除 99% 卡顿。"""
+        now = time.time()
+        with self.lock:
+            if not self.inflight:
+                return None
+            if self._chunk_times:
+                avg = sum(self._chunk_times) / len(self._chunk_times)
             else:
+                avg = 2.0
+            thresh = max(3.5, avg * 2.5)
+            cand = None
+            oldest = 0.0
+            for idx, t0 in list(self.inflight.items()):
+                if idx in self.done or idx in self._hedged:
+                    continue
+                el = now - t0
+                if el >= thresh and el > oldest:
+                    a, b = self.chunks[idx]
+                    if (b - a + 1) <= (4 << 20):
+                        cand = (idx, a, b)
+                        oldest = el
+            if cand is not None:
+                self._hedged.add(cand[0])
+            return cand
+
+    def _fetch_hedge(self, i, a, b, fd):
+        """投机拉取单条慢片：先读进内存，赢了竞争再原子落盘，绝不与原线程重叠写。"""
+        want = b - a + 1
+        s = self.api.s
+        url = None
+        gated = False
+        r = None
+        try:
+            if not self.gov.acquire(self.stop):
+                return
+            gated = True
+            with self.lock:
+                if i in self.done:
+                    return
+            url = self._next_link()
+            h = {"Range": "bytes=%d-%d" % (a, b), "Accept-Encoding": "identity"}
+            ck = self._ck()
+            if ck:
+                h["Cookie"] = ck
+            r = s.get(url, headers=h, timeout=(10, 30), stream=True)
+            if r.status_code not in (200, 206) or (r.status_code == 200 and a > 0):
+                if r.status_code == 412:
+                    self._drop_link(url)
+                return
+            buf = bytearray()
+            pending_rx = 0
+            last_flush = time.time()
+            for blk in r.iter_content(1 << 17):
+                if self.stop.is_set() or i in self.done:
+                    return
+                n = len(blk)
+                if len(buf) + n > want:
+                    blk = blk[:want - len(buf)]
+                    n = len(blk)
+                if n:
+                    buf += blk
+                    pending_rx += n
+                    now = time.time()
+                    if pending_rx >= (256 << 10) or now - last_flush >= 0.12:
+                        with self.lock:
+                            self.bytes_rx += pending_rx
+                        pending_rx = 0
+                        last_flush = now
+                if len(buf) >= want:
+                    break
+            if pending_rx:
                 with self.lock:
-                    self.fail.append((i, "重试4次仍失败"))
+                    self.bytes_rx += pending_rx
+            if len(buf) < want:
+                return
+            # 只有原线程还没完成时才落盘并记账，确保不重复计 bytes_done
+            with self.lock:
+                if i in self.done or self.stop.is_set():
+                    return
+                os.lseek(fd, a, os.SEEK_SET)
+                mv = memoryview(buf)
+                off = 0
+                while off < want:
+                    off += os.write(fd, mv[off:want])
+                self.done.add(i)
+                self.inflight.pop(i, None)
+                self.bytes_done += want
+            self.gov.reward()
+        except Exception as e:
+            if _is_conn_err(e):
+                self.gov.penalty()
+        finally:
+            try:
+                if r is not None:
+                    r.close()
+            except Exception:
+                pass
+            if gated:
+                self.gov.release()
+            with self.lock:
+                self._hedged.discard(i)
+
+    def _worker_inner(self, todo, allow_hedge=True):
+        s = self.api.s
+        # 每个 worker 复用同一个 fd：避免 384 线程每片都 os.open/os.close 触发
+        # Windows 高频句柄开关与杀软实时扫描开销。各线程独立 fd，lseek 互不干扰。
+        fd = -1
+        try:
+            while not self.stop.is_set():
+                try:
+                    i, a, b = todo.get_nowait()
+                except queue.Empty:
+                    if not allow_hedge:
+                        return
+                    h_item = self._pick_hedge()
+                    if h_item is None:
+                        return
+                    if fd < 0:
+                        fd = os.open(self.out, os.O_RDWR | getattr(os, "O_BINARY", 0))
+                    self._fetch_hedge(h_item[0], h_item[1], h_item[2], fd)
+                    continue
+
+                want = b - a + 1
+                with self.lock:
+                    if i in self.done:
+                        continue
+                    self.inflight[i] = time.time()
+
+                beaten = False
+                for attempt in range(4):
+                    part_got = 0      # 本次 attempt 已计入 bytes_done 的字节；失败要回滚
+                    pending_rx = 0    # 本地攒批，降低全局锁竞争
+                    if self.stop.is_set():
+                        with self.lock:
+                            self.inflight.pop(i, None)
+                        return
+                    if i in self.done:
+                        beaten = True
+                        break
+                    url = None
+                    gated = False
+                    r = None
+                    try:
+                        if not self.gov.acquire(self.stop):
+                            with self.lock:
+                                self.inflight.pop(i, None)
+                            return
+                        gated = True
+                        url = self._next_link()
+                        h = {"Range": "bytes=%d-%d" % (a, b), "Accept-Encoding": "identity"}
+                        ck = self._ck(refresh=(attempt > 0))
+                        if ck:
+                            # 直链要 __sdid/__pugs，缺了一律 412；Api.s 上那条空 Cookie
+                            # 会盖掉 cookie jar，必须显式给值
+                            h["Cookie"] = ck
+                        r = s.get(url, headers=h, timeout=(15, 60), stream=True)
+                        if r.status_code == 412:
+                            # 412 = Cookie 里缺 __sdid/__pugs 或已过期：丢链接、重取 Cookie 再来
+                            self._drop_link(url)
+                            self._ck(refresh=True)
+                            time.sleep(0.3 * (attempt + 1))
+                            continue
+                        if r.status_code not in (200, 206):
+                            raise QuarkError("HTTP %d" % r.status_code)
+                        if r.status_code == 200 and a > 0:
+                            # 服务端忽略 Range 直接回整文件：照收会把文件开头写到偏移 a 处，
+                            # 片计数全绿但内容错位（静默损坏），必须当失败处理
+                            raise QuarkError("忽略 Range(200)")
+                        # 边收边写：每线程复用自己的 fd 写自己那段偏移，不在内存里攒整片。
+                        # 自定义档 32MB 片 × 384 连接如果都缓在内存里，峰值能到 12GB。
+                        if fd < 0:
+                            fd = os.open(self.out, os.O_RDWR | getattr(os, "O_BINARY", 0))
+                        os.lseek(fd, a, os.SEEK_SET)
+                        got = 0
+                        t_read0 = time.time()
+                        last_flush = t_read0
+                        for blk in r.iter_content(1 << 17):
+                            if self.stop.is_set():
+                                raise QuarkError("已取消")
+                            if i in self.done:
+                                # 已被尾部投机线程抢先完成：立刻回退本次增量并释放连接
+                                beaten = True
+                                break
+                            n = len(blk)
+                            if got + n > want:
+                                blk = blk[:want - got]
+                                n = want - got
+                            if n:
+                                # os.write 可能只写一部分（大块 + 慢盘），必须写满
+                                off = 0
+                                while off < n:
+                                    off += os.write(fd, blk[off:n])
+                                got += n
+                                pending_rx += n
+                                now = time.time()
+                                # 攒批更新全局计数（每 256KB 或 120ms 一次），兼顾界面流畅与低锁竞争
+                                if pending_rx >= (256 << 10) or now - last_flush >= 0.12:
+                                    with self.lock:
+                                        self.bytes_done += pending_rx
+                                        self.bytes_rx += pending_rx
+                                    part_got += pending_rx
+                                    pending_rx = 0
+                                    last_flush = now
+                                # 慢连接早退：持续 10 秒速率低于 10 KB/s 直接换链重试，不等 60 秒死等
+                                el = now - t_read0
+                                if el >= 10.0 and (got / el) < 10240 and self.bytes_rx > want:
+                                    raise QuarkError("单连接过慢")
+                            if got >= want:
+                                break
+                        if beaten:
+                            if part_got:
+                                with self.lock:
+                                    self.bytes_done = max(0, self.bytes_done - part_got)
+                            break
+                        if pending_rx:
+                            with self.lock:
+                                self.bytes_done += pending_rx
+                                self.bytes_rx += pending_rx
+                            part_got += pending_rx
+                            pending_rx = 0
+                        if got < want:
+                            raise QuarkError("短读 %d/%d" % (got, want))
+                        dur = time.time() - t_read0
+                        with self.lock:
+                            if i in self.done:
+                                # 刚写完瞬间被投机线程抢先登记：退回本地记账避免超 100%
+                                self.bytes_done = max(0, self.bytes_done - part_got)
+                            else:
+                                self.done.add(i)
+                                self._chunk_times.append(dur)
+                                if len(self._chunk_times) > 32:
+                                    del self._chunk_times[:-32]
+                            self.inflight.pop(i, None)
+                        self.gov.reward()
+                        break
+                    except Exception as e:
+                        if part_got:
+                            # 这一 attempt 收到的字节要退回，重试会从头重收这片
+                            with self.lock:
+                                self.bytes_done = max(0, self.bytes_done - part_got)
+                        if "412" in str(e):
+                            self._drop_link(url)
+                        # 连接超时/被重置是并发过高的直接信号：立刻回撤闸门，
+                        # 别让剩下的线程继续排队撞同一堵墙
+                        if _is_conn_err(e):
+                            self.gov.penalty()
+                        time.sleep(0.4 * (attempt + 1))
+                    finally:
+                        # 提前 break 的响应体没读完，不显式关掉的话 urllib3 会把连接丢掉
+                        # 而不是还回池子，等于每片都重新握手
+                        try:
+                            if r is not None:
+                                r.close()
+                        except Exception:
+                            pass
+                        r = None
+                        if gated:
+                            self.gov.release()
+                else:
+                    with self.lock:
+                        self.inflight.pop(i, None)
+                        if i not in self.done:
+                            self.fail.append((i, "重试4次仍失败"))
+        finally:
+            if fd >= 0:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
 
     # -- 主流程
     def run(self):
@@ -937,7 +1132,7 @@ class Downloader:
             pass
         os.close(fd)
         nthreads = min(self.conns, pending)
-        threads = [threading.Thread(target=self._worker, args=(todo,), daemon=True)
+        threads = [threading.Thread(target=self._worker, args=(todo, True), daemon=True)
                    for _ in range(nthreads)]
         for t in threads:
             t.start()
@@ -956,40 +1151,48 @@ class Downloader:
                     self.progress(self)
                 except Exception:
                     pass
-        self.stop.set()
+        # 注意：绝不能在重试前无条件 self.stop.set()！否则下面重试线程一启动看到
+        # stop 已置位就会立刻退出，失败重试彻底沦为死代码。
+        stopped_by_user = self.stop.is_set()
         for t in threads:
             t.join(timeout=3)
         self._save_state()
-        for _ in range(4):
-            if not self.fail:
-                break
-            retry = [i for i, _ in self.fail if i >= 0]
-            self.fail = [f for f in self.fail if f[0] < 0]
-            if not retry:
-                break
-            q2 = queue.Queue()
-            for i in retry:
-                q2.put((i, self.chunks[i][0], self.chunks[i][1]))
-            ts = [threading.Thread(target=self._worker, args=(q2,), daemon=True)
-                  for _ in range(min(self.conns, len(retry)))]
-            for t in ts:
-                t.start()
-            for t in ts:
-                t.join()
+        if not stopped_by_user:
+            for _ in range(4):
+                if self.stop.is_set() or not self.fail:
+                    break
+                retry = [i for i, _ in self.fail if i >= 0 and i not in self.done]
+                self.fail = [f for f in self.fail if f[0] < 0]
+                if not retry:
+                    break
+                q2 = queue.Queue()
+                for i in retry:
+                    q2.put((i, self.chunks[i][0], self.chunks[i][1]))
+                ts = [threading.Thread(target=self._worker, args=(q2, False), daemon=True)
+                      for _ in range(min(self.conns, len(retry)))]
+                for t in ts:
+                    t.start()
+                while any(t.is_alive() for t in ts):
+                    if self.stop.wait(0.5):
+                        break
+                for t in ts:
+                    t.join(timeout=3)
         self._save_state()
-        ok = len(self.done) == len(self.chunks)
+        ok = (not self.stop.is_set()) and (len(self.done) == len(self.chunks))
         if ok:
             bad = self.spot_check(3)
             if bad:
                 self.fail.extend((-1, m) for m in bad)
                 ok = False
-        # 最后一道闸：整个文件做头/中/尾三段逐字节复核。
+        # 最后一道闸：整个文件做头/尾并发逐字节复核（复用已有直链，省一次取链 RTT）。
         # 服务端偶发返回 200+全零体（不是 4xx），片计数会全绿但内容是空的。
         if ok:
+            with self.link_lock:
+                reuse_url = self.links[0] if self.links else None
             # 分享直下必须把 link_fn 传进去：file_ok 内部要自己取直链再抽样比对，
             # 走 api.download_url 对分享 fid 一律 31001，会把好文件误判成坏文件
             ok2, why = file_ok(self.api, self.task.fid, self.out, self.task.size,
-                               link_fn=self.link_fn)
+                               link_fn=self.link_fn, url=reuse_url)
             if not ok2:
                 self.fail.append((-1, "整文件复核失败: " + why))
                 ok = False
@@ -998,13 +1201,13 @@ class Downloader:
                 os.remove(self.state)
             except OSError:
                 pass
-        if not ok:
+        if not ok and not self.stop.is_set():
             try:
                 with open(qbad_path(self.out), "w", encoding="utf-8") as f:
                     f.write("incomplete: %s\n" % "; ".join(str(m) for _, m in self.fail[:5]))
             except OSError:
                 pass
-        else:
+        elif ok:
             for p in {self.out + ".qbad", qbad_path(self.out)}:
                 if os.path.exists(p):
                     try:
@@ -1014,25 +1217,28 @@ class Downloader:
         return ok
 
     def spot_check(self, n=3):
-        """随机抽 n 片与源逐字节比对；网络异常跳过，只有内容不符才报。"""
+        """并发随机抽 n 片（每片取前 16KB）与源逐字节比对；网络异常跳过，只有内容不符才报。"""
         if not self.chunks:
             return []
         idx = random.sample(range(len(self.chunks)), min(n, len(self.chunks)))
         bad = []
-        for i in idx:
+        lk = threading.Lock()
+
+        def _check_one(i):
             a, b = self.chunks[i]
-            want = b - a + 1
+            want = min(b - a + 1, 16 << 10)
+            b_end = a + want - 1
             got = None
             for _ in range(3):
                 url = None
                 try:
                     url = self._next_link()
-                    hh = {"Range": "bytes=%d-%d" % (a, b),
+                    hh = {"Range": "bytes=%d-%d" % (a, b_end),
                           "Accept-Encoding": "identity"}
                     ck = self._ck()
                     if ck:
                         hh["Cookie"] = ck
-                    r = self.api.s.get(url, headers=hh, timeout=(15, 60))
+                    r = self.api.s.get(url, headers=hh, timeout=(15, 30))
                     if r.status_code in (200, 206):
                         got = r.content
                         break
@@ -1041,15 +1247,22 @@ class Downloader:
                 except requests.RequestException:
                     continue
             if got is None:
-                continue
+                return
             try:
                 with open(self.out, "rb") as f:
                     f.seek(a)
                     local = f.read(want)
             except OSError:
-                continue
+                return
             if len(local) < want or local[:want] != got[:want]:
-                bad.append("片 %d 内容不符" % i)
+                with lk:
+                    bad.append("片 %d 内容不符" % i)
+
+        ts = [threading.Thread(target=_check_one, args=(i,), daemon=True) for i in idx]
+        for t in ts:
+            t.start()
+        for t in ts:
+            t.join(timeout=35)
         return bad
 
 

@@ -93,16 +93,20 @@ button{font-family:var(--font);cursor:pointer;border:none;outline:none}
 .tbl{flex:1;min-height:0;overflow:auto;padding:0 8px 12px}
 table{width:100%;border-collapse:collapse;table-layout:fixed}
 thead th{height:32px;font-size:12px;font-weight:400;color:var(--text2);text-align:left;
-  border-bottom:1px solid var(--border);position:sticky;top:0;background:#fff;z-index:2}
+  border-bottom:1px solid var(--border);position:sticky;top:0;background:#fff;z-index:2;user-select:none}
+thead th.sortable{cursor:pointer}
+thead th.sortable:hover{color:var(--primary)}
+thead th .sarr{font-size:10px;margin-left:4px;color:var(--primary)}
 tbody td{height:44px;font-size:13px;border-bottom:1px solid #f7f7f9;color:var(--text)}
 tbody tr:hover{background:#fafbfd}
 tbody tr.on{background:#f2f6ff}
 tbody tr.on:hover{background:#eaf1ff}
-.pcell{width:56px;text-align:right;padding-right:14px}
-.play{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:6px;
-  background:#f2f6ff;color:var(--primary);font-size:10px;cursor:pointer;opacity:0;transition:opacity .12s}
-tbody tr:hover .play{opacity:1}
-.play:hover{background:var(--primary);color:#fff}
+.pcell{width:76px;text-align:right;padding-right:14px;white-space:nowrap}
+.play,.dlone{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:6px;
+  background:#f2f6ff;color:var(--primary);font-size:11px;cursor:pointer;opacity:0;transition:opacity .12s;
+  vertical-align:middle;margin-left:4px}
+tbody tr:hover .play,tbody tr:hover .dlone{opacity:1}
+.play:hover,.dlone:hover{background:var(--primary);color:#fff}
 .cell{display:flex;align-items:center;gap:10px;min-width:0}
 .name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .fname{cursor:pointer}
@@ -193,8 +197,9 @@ tr.on .cb:after{content:'';position:absolute;left:4px;top:1px;width:4px;height:7
 /* ---------- fab / toast ---------- */
 .fab{position:fixed;right:26px;bottom:26px;width:56px;height:56px;border-radius:50%;z-index:50;
   background:linear-gradient(135deg,#5b8bff,#0d53ff);color:#fff;display:grid;place-items:center;
-  box-shadow:0 10px 26px rgba(13,83,255,.4);transition:transform .16s}
+  box-shadow:0 10px 26px rgba(13,83,255,.4);transition:transform .16s,opacity .16s}
 .fab:hover{transform:scale(1.06)}
+body.drawer-open .fab{opacity:0;pointer-events:none;transform:scale(.85)}
 .fab svg{width:26px;height:26px}
 .badge{position:absolute;top:-3px;right:-3px;min-width:19px;height:19px;border-radius:10px;
   background:#ff5b4a;color:#fff;font-size:11px;font-weight:600;display:none;
@@ -255,7 +260,7 @@ tr.on .cb:after{content:'';position:absolute;left:4px;top:1px;width:4px;height:7
   color:#c0362c;font-size:12.5px;line-height:1.7}
 .modal{position:fixed;inset:0;background:rgba(15,18,28,.42);z-index:70;display:none;align-items:center;justify-content:center}
 .modal.on{display:flex}
-.mbox{width:460px;background:#fff;border-radius:16px;padding:24px 26px;box-shadow:0 20px 60px rgba(0,0,0,.22)}
+.mbox{width:460px;max-height:90vh;overflow-y:auto;background:#fff;border-radius:16px;padding:24px 26px;box-shadow:0 20px 60px rgba(0,0,0,.22)}
 .mbox h4{font-size:16px;font-weight:600;color:rgba(6,10,38,.9);margin-bottom:10px}
 .mbox p{font-size:12.5px;color:var(--text2);line-height:1.7;margin-bottom:14px}
 .mbox .malt{margin:18px 0 8px;font-size:11.5px;color:var(--text3)}
@@ -280,6 +285,9 @@ tr.on .cb:after{content:'';position:absolute;left:4px;top:1px;width:4px;height:7
 .phead{height:52px;display:flex;align-items:center;gap:10px;padding:0 18px;color:#fff}
 .phead .pt{flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .phead .pst{font-size:11.5px;color:rgba(255,255,255,.55);flex:0 0 auto}
+.phead .pdl{height:26px;padding:0 10px;border-radius:6px;background:rgba(13,83,255,.85);color:#fff;
+  font-size:11.5px;font-weight:500;flex:0 0 auto}
+.phead .pdl:hover{background:var(--primary)}
 .phead .px{width:26px;height:26px;border-radius:6px;background:rgba(255,255,255,.1);color:#fff;
   display:grid;place-items:center;font-size:14px;flex:0 0 auto}
 .phead .px:hover{background:rgba(255,255,255,.2)}
@@ -345,8 +353,8 @@ video{display:block;width:100%;max-height:74vh;background:#000;outline:none}
     <div class="crumb" id="crumb"></div>
     <div class="tbl">
       <table>
-        <colgroup><col style="width:52px"><col><col style="width:120px"><col style="width:150px"><col style="width:56px"></colgroup>
-        <thead><tr><th></th><th>文件名</th><th>大小</th><th>修改时间</th><th></th></tr></thead>
+        <colgroup><col style="width:52px"><col><col style="width:120px"><col style="width:150px"><col style="width:76px"></colgroup>
+        <thead><tr><th></th><th class="sortable" data-sort="name">文件名<span class="sarr"></span></th><th class="sortable" data-sort="size">大小<span class="sarr"></span></th><th class="sortable" data-sort="updated">修改时间<span class="sarr"></span></th><th></th></tr></thead>
         <tbody id="tbody"></tbody>
       </table>
       <div class="empty" id="empty" style="display:none"></div>
@@ -371,7 +379,7 @@ video{display:block;width:100%;max-height:74vh;background:#000;outline:none}
   <div class="dstats">
     <div class="dstat"><i id="stSpeed">0.00</i><small>实时 MB/s</small></div>
     <div class="dstat"><i id="stPct">0%</i><small>总进度</small></div>
-    <div class="dstat"><i id="stRun">0</i><small>传输中</small></div>
+    <div class="dstat"><i id="stRun">0</i><small>进行中</small></div>
   </div>
   <div class="dpath" id="dpath" title="点击更改保存目录">
     <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -473,6 +481,7 @@ video{display:block;width:100%;max-height:74vh;background:#000;outline:none}
     <div class="phead">
       <span class="pt" id="pvName">预览</span>
       <span class="pst" id="pvStat"></span>
+      <button class="pdl" id="pvDl" title="下载当前视频">下载</button>
       <button class="px" id="pvClose">×</button>
     </div>
     <video id="pvVideo" controls preload="auto" playsinline></video>
@@ -485,8 +494,14 @@ video{display:block;width:100%;max-height:74vh;background:#000;outline:none}
 <script>
 var S = {
   tab: 'jobs', path: [{fid:'0', name:'全部文件'}], entries: [], picked: {}, snap: null,
-           tier: 'turbo', tiers: [], q: '', logged: false, listErr: '', demo: false,
-  outNote: '' };
+  tier: 'turbo', tiers: [], q: '', logged: false, listErr: '', demo: false,
+  outNote: '', sort: { key: '', asc: true }, lastIdx: -1,
+  _jobsKey: '', _histKey: '', _lastTab: ''
+};
+var QA_TOKEN = (function () {
+  var m = document.querySelector('meta[name="qa-token"]');
+  return m ? (m.getAttribute('content') || '') : '';
+})();
 
 var ICON = {
   folder: '<path d="M1.5 3.6h4.2l1.3 1.8h7.5v8.1H1.5z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>',
@@ -545,9 +560,14 @@ function toast(msg) {
 }
 
 function api(path, body) {
-  var opt = body === undefined ? {} : {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
-  };
+  var headers = {};
+  if (QA_TOKEN) headers['X-QA-Token'] = QA_TOKEN;
+  var opt = { headers: headers };
+  if (body !== undefined) {
+    headers['Content-Type'] = 'application/json';
+    opt.method = 'POST';
+    opt.body = JSON.stringify(body);
+  }
   return fetch('/api/' + path, opt).then(function (r) { return r.json(); });
 }
 
@@ -560,10 +580,7 @@ var NAV = [
   { k: 'doc', ic: 'doc', t: '文档' },
   { k: 'audio', ic: 'audio', t: '音频' },
   { k: '-', t: '' },
-  { k: 'fav', ic: 'star', t: '收藏' },   // 夸克无公开收藏接口，点开提示
-  { k: 'share', ic: 'share', t: '我的分享' },
-  { k: 'trash', ic: 'trash', t: '回收站' },
-  { k: 'backup', ic: 'backup', t: '我的备份' }
+  { k: 'trash', ic: 'trash', t: '回收站' }
 ];
 var navOn = 'all';
 // 视频 / 图片 / 文档 / 音频 按扩展名在本地过滤（夸克网页版这几个入口也是同一批文件）
@@ -625,13 +642,58 @@ function renderCrumb() {
   });
 }
 
-function render() {
-  var tb = document.getElementById('tbody');
+function getVisibleEntries() {
   var list = S.entries.filter(function (e) {
     if (S.q && (e.name || '').toLowerCase().indexOf(S.q) < 0) return false;
     if (CAT[navOn]) return !e.is_dir && CAT[navOn].indexOf(catOf(e.name)) >= 0;
     return true;
   });
+  if (S.sort && S.sort.key) {
+    var k = S.sort.key, dir = S.sort.asc ? 1 : -1;
+    list = list.slice().sort(function (a, b) {
+      if (!!a.is_dir !== !!b.is_dir) return a.is_dir ? -1 : 1;
+      if (k === 'name') return String(a.name || '').localeCompare(String(b.name || ''), 'zh-CN') * dir;
+      return ((a[k] || 0) - (b[k] || 0)) * dir;
+    });
+  }
+  return list;
+}
+
+function syncSortHead() {
+  Array.prototype.forEach.call(document.querySelectorAll('thead th.sortable'), function (th) {
+    var sp = th.querySelector('.sarr');
+    if (!sp) return;
+    if (S.sort.key === th.dataset.sort) sp.textContent = S.sort.asc ? '▲' : '▼';
+    else sp.textContent = '';
+  });
+}
+
+function updateSelInfo() {
+  var n = Object.keys(S.picked).length;
+  var sz = 0;
+  for (var k in S.picked) sz += S.picked[k].size || 0;
+  document.getElementById('selInfo').textContent = n ? ('已选 ' + n + ' 项 · ' + human(sz)) : '';
+  document.getElementById('btnDl').disabled = !n;
+}
+
+function quickDownload(ent) {
+  if (!ent || !ent.fid) return;
+  api('add', {
+    items: [{ fid: ent.fid, name: ent.name, size: ent.size, dir: ent.is_dir }],
+    dir: S.path[S.path.length - 1].fid
+  }).then(function (r) {
+    if (r.ok) {
+      setDrawer(true);
+      toast('已加入 ' + r.added + ' 个任务');
+      refresh();
+    } else { toast('加入失败：' + (r.err || '')); }
+  }).catch(function (e) { toast('请求失败：' + e.message); });
+}
+
+function render() {
+  var tb = document.getElementById('tbody');
+  var list = getVisibleEntries();
+  syncSortHead();
   if (!list.length) {
     tb.innerHTML = '';
     var em = document.getElementById('empty');
@@ -656,26 +718,36 @@ function render() {
     tb.innerHTML = list.map(function (e, i) {
       var on = !!S.picked[e.fid];
       var k = kindOf(e.name, e.is_dir);
-      return '<tr data-fid="' + esc(e.fid) + '" class="' + (on ? 'on' : '') + '">' +
+      var playBtn = (!e.is_dir && k === 'video')
+        ? '<span class="play" data-fid="' + esc(e.fid) + '" data-name="' + esc(e.name) +
+          '" data-size="' + (e.size || 0) + '" title="边下边播">▶</span>' : '';
+      var dlBtn = '<span class="dlone" data-fid="' + esc(e.fid) + '" title="立即下载">↓</span>';
+      return '<tr data-fid="' + esc(e.fid) + '" data-i="' + i + '" class="' + (on ? 'on' : '') + '">' +
         '<td style="padding-left:20px"><div class="cell"><span class="cb"></span></div></td>' +
         '<td><div class="cell">' + icon(k, e.is_dir ? 'dir' : '') +
         '<span class="name fname" data-dir="' + (e.is_dir ? 1 : 0) + '">' + esc(e.name) + '</span></div></td>' +
         '<td class="muted">' + (e.is_dir ? '-' : human(e.size)) + '</td>' +
         '<td class="muted">' + fmtTime(e.updated) + '</td>' +
-        '<td class="pcell">' + (e.is_dir ? '' :
-          (kindOf(e.name, false) === 'video'
-            ? '<span class="play" data-fid="' + esc(e.fid) + '" data-name="' + esc(e.name) +
-              '" data-size="' + (e.size || 0) + '" title="边下边播">▶</span>' : '')) + '</td></tr>';
+        '<td class="pcell">' + playBtn + dlBtn + '</td></tr>';
     }).join('');
     Array.prototype.forEach.call(tb.querySelectorAll('tr'), function (tr) {
-      var fid = tr.dataset.fid;
-      var ent = S.entries.filter(function (x) { return x.fid === fid; })[0];
-      tr.querySelector('.cb').parentNode.parentNode.onclick = function (ev) { toggle(ent, tr); };
+      var idx = parseInt(tr.dataset.i, 10);
+      var ent = list[idx];
+      if (!ent) return;
+      tr.querySelector('.cb').parentNode.parentNode.onclick = function (ev) {
+        toggle(ent, tr, idx, list, ev.shiftKey);
+      };
       var fn = tr.querySelector('.fname');
       fn.onclick = function (ev) {
         ev.stopPropagation();
         if (ent.is_dir) { go(ent.fid, ent.name); }
-        else { toggle(ent, tr); }
+        else { toggle(ent, tr, idx, list, ev.shiftKey); }
+      };
+      tr.ondblclick = function () {
+        if (ent.is_dir) { go(ent.fid, ent.name); }
+        else if (kindOf(ent.name, false) === 'video') {
+          openPreview(ent.fid, ent.name, ent.size || 0);
+        }
       };
       var pl = tr.querySelector('.play');
       if (pl) {
@@ -684,20 +756,39 @@ function render() {
           openPreview(pl.dataset.fid, pl.dataset.name, parseInt(pl.dataset.size || '0', 10));
         };
       }
+      var dl = tr.querySelector('.dlone');
+      if (dl) {
+        dl.onclick = function (ev) {
+          ev.stopPropagation();
+          quickDownload(ent);
+        };
+      }
     });
   }
-  var n = Object.keys(S.picked).length;
-  var sz = 0;
-  for (var k in S.picked) sz += S.picked[k].size || 0;
-  document.getElementById('selInfo').textContent = n ? ('已选 ' + n + ' 项 · ' + human(sz)) : '';
-  document.getElementById('btnDl').disabled = !n;
+  updateSelInfo();
 }
 
-function toggle(ent, tr) {
+function toggle(ent, tr, idx, list, shiftKey) {
+  if (shiftKey && list && S.lastIdx >= 0 && typeof idx === 'number') {
+    var lo = Math.min(S.lastIdx, idx), hi = Math.max(S.lastIdx, idx);
+    var want = !S.picked[ent.fid];
+    var rows = document.querySelectorAll('#tbody tr');
+    for (var i = lo; i <= hi; i++) {
+      var it = list[i];
+      if (!it) continue;
+      if (want) S.picked[it.fid] = { fid: it.fid, name: it.name, size: it.size, dir: it.is_dir };
+      else delete S.picked[it.fid];
+      if (rows[i]) rows[i].classList.toggle('on', want);
+    }
+    S.lastIdx = idx;
+    updateSelInfo();
+    return;
+  }
   if (S.picked[ent.fid]) { delete S.picked[ent.fid]; }
   else { S.picked[ent.fid] = { fid: ent.fid, name: ent.name, size: ent.size, dir: ent.is_dir }; }
+  if (typeof idx === 'number') S.lastIdx = idx;
   if (tr) tr.classList.toggle('on', !!S.picked[ent.fid]);
-  render();
+  updateSelInfo();
 }
 
 function load() {
@@ -822,6 +913,17 @@ function jobActions(j) {
   return '<span class="ja">' + a.join('') + '</span>';
 }
 
+function jobMetaText(j) {
+  var st = ST[j.state] || [j.state, '#888'];
+  if (j.state === 'running') {
+    return (j.speed || 0).toFixed(2) + ' MB/s' +
+      (j.conns ? ' · ' + j.conns + ' 连接' : '') +
+      (j.left ? ' · 剩余 ' + j.left : '');
+  }
+  if (j.state === 'paused') return '已停 · 续传从 ' + human(j.got) + ' 继续';
+  return (j.note && j.note.indexOf(st[0]) !== 0) ? j.note : '';
+}
+
 function renderJobs(items) {
   if (!items.length) {
     return '<div class="empty" style="padding:40px 0"><b>还没有下载任务</b>' +
@@ -830,25 +932,15 @@ function renderJobs(items) {
   return items.map(function (j) {
     var pct = Math.max(0, Math.min(100, j.pct || 0));
     var st = ST[j.state] || [j.state, '#888'];
-    var meta;
-    if (j.state === 'running') {
-      meta = (j.speed || 0).toFixed(2) + ' MB/s' +
-        (j.conns ? ' · ' + j.conns + ' 连接' : '') +
-        (j.left ? ' · 剩余 ' + j.left : '');
-    } else if (j.state === 'paused') {
-      meta = '已停 · 续传从 ' + human(j.got) + ' 继续';
-    } else {
-      // 状态名已经在右边显示了，note 跟状态名一样时再写一遍很啰嗦
-      meta = (j.note && j.note.indexOf(st[0]) !== 0) ? j.note : '';
-    }
+    var meta = jobMetaText(j);
     return '<div class="job" data-id="' + esc(j.id) + '">' +
       '<div class="jt">' + icon(kindOf(j.name, false)) +
       '<span class="jn" title="' + esc(j.name) + '">' + esc(j.name) + '</span>' +
       '<span class="js" style="color:' + st[1] + '">' + st[0] + '</span>' +
       jobActions(j) + '</div>' +
       '<div class="jbar"><i style="width:' + pct + '%"></i></div>' +
-      '<div class="jm"><span>' + human(j.got) + ' / ' + human(j.size) +
-      ' · ' + pct.toFixed(0) + '%</span><span>' + meta + '</span></div></div>';
+      '<div class="jm"><span class="jm-l">' + human(j.got) + ' / ' + human(j.size) +
+      ' · ' + pct.toFixed(0) + '%</span><span class="jm-r">' + esc(meta) + '</span></div></div>';
   }).join('');
 }
 
@@ -890,25 +982,49 @@ function renderSnap(sn) {
   document.getElementById('tabJobs').textContent = items.length ? (' ' + items.length) : '';
   document.getElementById('tabHist').textContent = hist.length ? (' ' + hist.length) : '';
 
+  var dl = document.getElementById('dlist');
   if (S.tab === 'hist') {
-    document.getElementById('dlist').innerHTML = renderHist(hist);
-  } else {
-    document.getElementById('dlist').innerHTML = renderJobs(items);
-    wireJobs();
-  }
-  Array.prototype.forEach.call(document.querySelectorAll('.hitem'), function (h) {
-    h.onclick = function () {
-      if (h.dataset.path) api('reveal', { path: h.dataset.path });
-      else toast('这条记录没有文件路径');
-    };
-    var x = h.querySelector('.hx');
-    if (x) {
-      x.onclick = function (ev) {
-        ev.stopPropagation();
-        delFile(x.dataset.del, x.dataset.name, parseInt(x.dataset.size || '0', 10));
-      };
+    var hkey = hist.map(function (h) { return h.id + ':' + h.state; }).join('|');
+    if (S._lastTab !== 'hist' || hkey !== S._histKey) {
+      S._lastTab = 'hist';
+      S._histKey = hkey;
+      dl.innerHTML = renderHist(hist);
+      Array.prototype.forEach.call(dl.querySelectorAll('.hitem'), function (h) {
+        h.onclick = function () {
+          if (h.dataset.path) api('reveal', { path: h.dataset.path });
+          else toast('这条记录没有文件路径');
+        };
+        var x = h.querySelector('.hx');
+        if (x) {
+          x.onclick = function (ev) {
+            ev.stopPropagation();
+            delFile(x.dataset.del, x.dataset.name, parseInt(x.dataset.size || '0', 10));
+          };
+        }
+      });
     }
-  });
+  } else {
+    var jkey = items.map(function (j) { return j.id + ':' + j.state; }).join('|');
+    if (S._lastTab !== 'jobs' || jkey !== S._jobsKey) {
+      S._lastTab = 'jobs';
+      S._jobsKey = jkey;
+      dl.innerHTML = renderJobs(items);
+      wireJobs();
+    } else {
+      // 增量刷新进度与速率：避免每 600ms 全量重建 DOM 导致按钮闪烁与点击丢失
+      items.forEach(function (j) {
+        var row = dl.querySelector('.job[data-id="' + j.id + '"]');
+        if (!row) return;
+        var pct = Math.max(0, Math.min(100, j.pct || 0));
+        var bar = row.querySelector('.jbar i');
+        if (bar) bar.style.width = pct + '%';
+        var jl = row.querySelector('.jm-l');
+        if (jl) jl.textContent = human(j.got) + ' / ' + human(j.size) + ' · ' + pct.toFixed(0) + '%';
+        var jr = row.querySelector('.jm-r');
+        if (jr) jr.textContent = jobMetaText(j);
+      });
+    }
+  }
 
   var pb = document.getElementById('btnPause');
   pb.textContent = sn.paused ? '全部继续' : '全部暂停';
@@ -1006,9 +1122,21 @@ document.getElementById('delGo').onclick = function () {
 };
 
 /* ---------------- wiring ---------------- */
+function setDrawer(on) {
+  document.getElementById('drawer').classList.toggle('on', !!on);
+  document.body.classList.toggle('drawer-open', !!on);
+}
 document.getElementById('tcApply').onclick = applyCustom;
-document.getElementById('fab').onclick = function () { document.getElementById('drawer').classList.add('on'); };
-document.getElementById('dclose').onclick = function () { document.getElementById('drawer').classList.remove('on'); };
+document.getElementById('fab').onclick = function () { setDrawer(true); };
+document.getElementById('dclose').onclick = function () { setDrawer(false); };
+Array.prototype.forEach.call(document.querySelectorAll('thead th.sortable'), function (th) {
+  th.onclick = function () {
+    var k = th.dataset.sort;
+    if (S.sort.key === k) S.sort.asc = !S.sort.asc;
+    else { S.sort.key = k; S.sort.asc = (k === 'name'); }
+    render();
+  };
+});
 document.getElementById('btnReload').onclick = function () { load(); refresh(); toast('已刷新'); };
 document.getElementById('btnFolder').onclick = function () {
   this.disabled = true;
@@ -1093,10 +1221,10 @@ document.getElementById('capTxt').parentNode.parentNode.onclick = function () {
   toast(t && t !== '--' ? ('网盘容量 ' + t) : '还没拿到容量，登录后会自动刷新');
 };
 document.getElementById('btnAll').onclick = function () {
-  S.entries.forEach(function (e) { S.picked[e.fid] = { fid: e.fid, name: e.name, size: e.size, dir: e.is_dir }; });
+  getVisibleEntries().forEach(function (e) { S.picked[e.fid] = { fid: e.fid, name: e.name, size: e.size, dir: e.is_dir }; });
   render();
 };
-document.getElementById('btnNone').onclick = function () { S.picked = {}; render(); };
+document.getElementById('btnNone').onclick = function () { S.picked = {}; S.lastIdx = -1; render(); };
 document.getElementById('btnDl').onclick = function () {
   var items = Object.keys(S.picked).map(function (k) { return S.picked[k]; });
   if (!items.length) return;
@@ -1104,17 +1232,18 @@ document.getElementById('btnDl').onclick = function () {
   api('add', { items: items, dir: S.path[S.path.length - 1].fid }).then(function (r) {
     btn.textContent = '下载所选';
     if (r.ok) {
-      S.picked = {}; render();
-      document.getElementById('drawer').classList.add('on');
+      S.picked = {}; S.lastIdx = -1; render();
+      setDrawer(true);
       toast('已加入 ' + r.added + ' 个任务');
       refresh();
     } else { toast('加入失败：' + (r.err || '')); }
   }).catch(function (e) { btn.textContent = '下载所选'; toast('请求失败：' + e.message); });
 };
 document.getElementById('btnPause').onclick = function () {
-  var p = this.textContent === '暂停';
-  api(p ? 'pause' : 'resume', {}).then(function () {
-    document.getElementById('btnPause').textContent = p ? '继续' : '暂停';
+  var wantPause = !(S.snap && S.snap.paused);
+  api(wantPause ? 'pause' : 'resume', {}).then(function () {
+    document.getElementById('btnPause').textContent = wantPause ? '全部继续' : '全部暂停';
+    refresh();
   });
 };
 document.getElementById('btnClear').onclick = function () { api('clear', {}).then(refresh); };
@@ -1183,6 +1312,19 @@ function closePreview() {
 }
 
 document.getElementById('pvClose').onclick = closePreview;
+document.getElementById('pvDl').onclick = function () {
+  if (!PV.fid) return;
+  var nm = document.getElementById('pvName').textContent || PV.fid;
+  quickDownload({ fid: PV.fid, name: nm, size: PV.size || 0, is_dir: false });
+  closePreview();
+};
+window.addEventListener('beforeunload', function (e) {
+  if (S.snap && S.snap.running) {
+    e.preventDefault();
+    e.returnValue = '仍有下载任务正在进行，确定要关闭吗？';
+    return e.returnValue;
+  }
+});
 // 画面被自动播放策略拦住时，点一下就开（这也算一次真实手势）
 document.getElementById('pvVideo').onclick = function () {
   var v = document.getElementById('pvVideo');

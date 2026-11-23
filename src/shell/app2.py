@@ -10,6 +10,7 @@
 import io
 import json
 import os
+import secrets
 import shutil
 import subprocess
 import sys
@@ -213,9 +214,9 @@ def shell_open(path, select=False):
         # startfile 已经明确说「拒绝访问」，后面两条只会各挂十几秒。
         return False, last
 
-    # 3) cmd start（走 ShellExecute，和双击等价；路径带空格/中文时最稳）
+    # 3) cmd start（走 ShellExecute，和双击等价；传列表避免 shell=True 命令拼接风险）
     try:
-        subprocess.run('start "" "%s"' % path, shell=True,
+        subprocess.run(["cmd", "/c", "start", "", path],
                        capture_output=True, timeout=5,
                        creationflags=CREATE_NO_WINDOW)
         ok, why = done("cmd start")
@@ -333,20 +334,23 @@ def load_cfg():
     return out
 
 
+_CFG_LOCK = threading.Lock()
+
+
 def save_cfg(d):
-    """原子写：先写 .tmp 再 replace。多个 HTTP 线程会同时改配置，中途被杀留下
-    半截 JSON 会让下次启动静默回落到默认档（用户的自定义连接数就丢了）。"""
+    """原子写：先写 .tmp 再 replace。加锁防多线程同时改写互相覆盖。"""
     # 两处都写：load_cfg 是「后者覆盖前者」，只写一处会让另一处变成陈旧值反压回来
     # （表现：明明降级过一次也记住了，下次启动又先白 9 秒）
-    for p in (CFG, os.path.join(data_dir(), "quark_accel.json")):
-        try:
-            os.makedirs(os.path.dirname(p), exist_ok=True)
-            tmp = p + ".tmp"
-            with io.open(tmp, "w", encoding="utf-8") as f:
-                json.dump(d, f, ensure_ascii=False, indent=1)
-            os.replace(tmp, p)
-        except Exception:
-            continue
+    with _CFG_LOCK:
+        for p in (CFG, os.path.join(data_dir(), "quark_accel.json")):
+            try:
+                os.makedirs(os.path.dirname(p), exist_ok=True)
+                tmp = p + ".tmp"
+                with io.open(tmp, "w", encoding="utf-8") as f:
+                    json.dump(d, f, ensure_ascii=False, indent=1)
+                os.replace(tmp, p)
+            except Exception:
+                continue
 
 
 def parse_cookie(raw):
@@ -572,6 +576,7 @@ class App:
         self.engine = None
         self.server = None
         self.edge = None
+        self.api_token = secrets.token_hex(16)  # 本地 HTTP API 一次性防跨站令牌
         self.beat = 0.0          # 页面最近一次心跳（/api/state）的时间戳
         self._lock = threading_lock()
         self._api_cache = {}
@@ -1044,12 +1049,14 @@ class App:
             pass
         self.refresh_user()
         if not self.api_err:
-            for p in (COOKIE_TXT, os.path.join(data_dir(), "cookie.txt")):
-                try:
-                    with io.open(p, "w", encoding="utf-8") as f:
-                        f.write(self.cookie)
-                except Exception:
-                    pass
+            # 仅写入用户数据目录（%LOCALAPPDATA%\QuarkAccel），避免在 exe 同目录留下明文凭据
+            p = os.path.join(data_dir(), "cookie.txt")
+            try:
+                os.makedirs(os.path.dirname(p), exist_ok=True)
+                with io.open(p, "w", encoding="utf-8") as f:
+                    f.write(self.cookie)
+            except Exception:
+                pass
         return {"ok": not self.api_err, "user": self.user, "err": self.api_err}
 
     # ---------------- 登录（独立窗口，异步起 + 后台自愈 + 已开就复用）

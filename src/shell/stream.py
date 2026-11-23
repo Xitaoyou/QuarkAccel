@@ -16,6 +16,7 @@ import bisect
 import collections
 import hashlib
 import os
+import random
 import threading
 import time
 
@@ -166,14 +167,28 @@ class Stream:
 
     def _refill(self, want):
         with self.link_lock:
-            need = want - len(self.links)
-        for _ in range(max(0, need)):
+            need = max(0, want - len(self.links))
+        if not need:
+            return
+        got, lk = [], threading.Lock()
+
+        def _one():
             try:
                 u = self._api().download_url(self.fid)
             except Exception:
-                break
+                return
+            if u:
+                with lk:
+                    got.append(u)
+
+        ts = [threading.Thread(target=_one, daemon=True) for _ in range(need)]
+        for t in ts:
+            t.start()
+        for t in ts:
+            t.join(timeout=12)
+        if got:
             with self.link_lock:
-                self.links.append(u)
+                self.links.extend(got)
 
     def _link(self):
         with self.link_lock:
@@ -182,7 +197,7 @@ class Stream:
             self._refill(self.ntok)
         with self.link_lock:
             if self.links:
-                return self.links[len(self.links) // 2]
+                return random.choice(self.links)
         return self._api().download_url(self.fid)
 
     def _drop(self, url):

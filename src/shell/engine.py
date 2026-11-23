@@ -23,6 +23,8 @@ import profiles
 HIST_MAX = 300          # 下载记录最多留多少条
 HIST_VIEW = 80          # 一次给界面多少条
 SPEED_WIN = 2.0         # 速度窗口（秒）：3 秒太钝，档位一变要等三秒界面才动
+SMALL_FILE_MAX = 16 << 20   # <= 16 MB 视为小文件，支持多文件并发以消除切换空窗
+SMALL_CONCUR = 3            # 小文件最多同时下几个
 
 
 class Job:
@@ -122,6 +124,7 @@ class Engine:
         self._running = False
         self._api = None
         self._push_last = 0.0
+        self._auto_best = None      # 记住自适应模式收敛出的最佳并发，供下一个文件直接起跑
         self.hist_path = hist_path or ""
         self.hist = []
         self._load_hist()
@@ -455,6 +458,34 @@ class Engine:
                 pass
 
     # -- 主循环
+    def _exec_job(self, job, conn_budget=None):
+        """执行单个任务并统一收尾（写记录 + 触发导入回调）。"""
+        try:
+            self._run_one(job, conn_budget=conn_budget)
+        except Exception as e:
+            # 没这层兜底，run_one 前半段抛异常会打死 worker，Job 永久停在
+            # running（UI 一直显示「传输中」，清空也清不掉）
+            self.log("任务异常 %s: %s" % (job.name[:24],
+                                        ("%s: %s" % (type(e).__name__, str(e)))[:90]))
+            with self.lock:
+                if job.state == "running":
+                    job.state = "failed"
+                    job.note = ("%s: %s" % (type(e).__name__, str(e)))[:80]
+            self._finish(job)
+            self.push(force=True)
+        # 演示分支和 _run_one 的暂停/取消分支都不会自己写记录，
+        # 这里统一补一次（_finish 有 t_done 幂等）
+        if job.state in ("done", "failed", "canceled"):
+            self._finish(job)
+            # 导入链接的任务在这里回调调度器（删除转存件 / 推进下一批）。
+            # 回调只触发一次：清掉引用，重试时不会再跑一遍删除
+            hook, job.on_done = job.on_done, None
+            if hook:
+                try:
+                    hook(job)
+                except Exception as e:
+                    self.log("导入回调失败 %s: %s" % (job.name[:24], str(e)[:80]))
+
     def _loop(self):
         # _running 是「队列消费中」的唯一权威：is_alive() 不能用来判断能不能收新任务
         # （最后一个任务结束时线程还活着，这期间 add() 会以为有人在干活而不启新线程，
@@ -464,41 +495,35 @@ class Engine:
                 if self.paused:
                     time.sleep(0.3)
                     continue
-                job = None
+                batch = []
                 with self.lock:
                     for jid in self.order:
                         j = self.jobs.get(jid)
-                        if j and j.state == "queued":
-                            job = j
-                            break
-                if job is None:
+                        if not j or j.state != "queued":
+                            continue
+                        if not batch:
+                            batch.append(j)
+                            # 大文件独享满带宽；小文件（<= 16 MB）凑最多 3 个并发下
+                            if self.demo or j.size > SMALL_FILE_MAX:
+                                break
+                        else:
+                            if j.size <= SMALL_FILE_MAX and len(batch) < SMALL_CONCUR:
+                                batch.append(j)
+                            if len(batch) >= SMALL_CONCUR:
+                                break
+                if not batch:
                     return
-                try:
-                    self._run_one(job)
-                except Exception as e:
-                    # 没这层兜底，run_one 前半段抛异常会打死 worker，Job 永久停在
-                    # running（UI 一直显示「传输中」，清空也清不掉）
-                    self.log("任务异常 %s: %s" % (job.name[:24],
-                                                ("%s: %s" % (type(e).__name__, str(e)))[:90]))
-                    with self.lock:
-                        if job.state == "running":
-                            job.state = "failed"
-                            job.note = ("%s: %s" % (type(e).__name__, str(e)))[:80]
-                    self.current = None
-                    self._finish(job)
-                    self.push(force=True)
-                # 演示分支和 _run_one 的暂停/取消分支都不会自己写记录，
-                # 这里统一补一次（_finish 有 t_done 幂等）
-                if job.state in ("done", "failed", "canceled"):
-                    self._finish(job)
-                    # 导入链接的任务在这里回调调度器（删除转存件 / 推进下一批）。
-                    # 回调只触发一次：清掉引用，重试时不会再跑一遍删除
-                    hook, job.on_done = job.on_done, None
-                    if hook:
-                        try:
-                            hook(job)
-                        except Exception as e:
-                            self.log("导入回调失败 %s: %s" % (job.name[:24], str(e)[:80]))
+                if len(batch) == 1:
+                    self._exec_job(batch[0])
+                else:
+                    # 小文件并发：平分总连接数，避免超出服务端并发甜点
+                    per = max(8, self.conns // len(batch))
+                    ts = [threading.Thread(target=self._exec_job, args=(j, per), daemon=True)
+                          for j in batch]
+                    for t in ts:
+                        t.start()
+                    for t in ts:
+                        t.join()
         finally:
             with self.lock:
                 self._running = False
@@ -565,11 +590,14 @@ class Engine:
         self._finish(job)
         self.push(force=True)
 
-    def _run_one(self, job):
+    def _run_one(self, job, conn_budget=None):
+        with self.lock:
+            if job.state in ("canceled", "paused") or job.paused or self.paused:
+                return
+            job.state = "running"
+            job.paused = False
         if self.demo:
             return self._run_demo(job)
-        job.state = "running"
-        job.paused = False
         job.t0 = time.time()
         job.samples.clear()
         job.speed = 0.0
@@ -622,18 +650,23 @@ class Engine:
                 job.conns_live = g.limit
             self.push()
 
-        n = plan_conns(job.size, self.conns)
+        max_c = min(self.conns, conn_budget) if conn_budget else self.conns
+        n = plan_conns(job.size, max_c)
+        is_auto = profiles.adaptive(self.tier)
         task = Task(rel=job.rel, fid=job.fid, size=job.size)
         dl = Downloader(job_api, task, out, conns=n, part_mb=self.part_mb,
                         tokens=self.tokens, resume=True, progress=on_prog,
                         link_fn=job.link_fn,
-                        adaptive=profiles.adaptive(self.tier))
+                        adaptive=is_auto,
+                        gov_start=self._auto_best if is_auto else None)
         job.dl = dl
         ok = False
         try:
             ok = dl.run()
         except Exception as e:
             job.note = "%s: %s" % (type(e).__name__, str(e)[:70])
+        if is_auto and ok and dl.gov.best_rate > 0:
+            self._auto_best = dl.gov.best_limit
         job.speed = 0.0
         if job.state == "canceled":
             job.note = "已取消"

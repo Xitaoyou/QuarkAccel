@@ -101,14 +101,32 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_OPTIONS(self):
+        # 仅允许同源调用，不再对外开放通配符 CORS
         self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "content-type")
-        self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
         self.send_header("Content-Length", "0")
         self.end_headers()
 
+    def _local_host_ok(self):
+        """防 DNS Rebinding：只接受 127.0.0.1 / localhost / [::1] 的 Host。"""
+        host = (self.headers.get("Host") or "").strip().lower()
+        if not host:
+            return True
+        if host.startswith("[::1]"):
+            return True
+        h = host.split(":", 1)[0]
+        return h in ("127.0.0.1", "localhost")
+
+    def _origin_ok(self):
+        origin = (self.headers.get("Origin") or "").strip().lower()
+        if not origin:
+            return True
+        return (origin.startswith("http://127.0.0.1:")
+                or origin.startswith("http://localhost:")
+                or origin in ("http://127.0.0.1", "http://localhost"))
+
     def _route(self, method):
+        if not self._local_host_ok() or not self._origin_ok():
+            return self._json({"ok": False, "err": "forbidden"}, 403)
         u = urllib.parse.urlparse(self.path)
         path = u.path
         qs = urllib.parse.parse_qs(u.query)
@@ -133,6 +151,11 @@ class Handler(BaseHTTPRequestHandler):
         p = os.path.join(HERE, name)
         with io.open(p, "rb") as f:
             data = f.read()
+        if name == "ui.html":
+            tok = getattr(self.server.app, "api_token", "") or ""
+            if tok:
+                meta = ('<meta charset="utf-8">\n<meta name="qa-token" content="%s">' % tok).encode("utf-8")
+                data = data.replace(b'<meta charset="utf-8">', meta, 1)
         ctype = MIME.get(os.path.splitext(name)[1].lower()) or "application/octet-stream"
         self._send(200, data, ctype)
 
@@ -212,6 +235,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def _api(self, name, qs, method):
         app = self.server.app
+        tok = getattr(app, "api_token", "") or ""
+        if tok and name not in ("ping", "version"):
+            got = (self.headers.get("X-QA-Token") or "").strip()
+            if got != tok:
+                return self._json({"ok": False, "err": "forbidden"}, 403)
         body = self._body() if method == "POST" else {}
 
         if name == "list":
