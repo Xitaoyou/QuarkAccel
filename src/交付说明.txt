@@ -218,6 +218,10 @@
   打包：cd quarkgui\shell && python build2.py
   quarkgui\shell\legacy\        早期 tkinter 注入路线的废弃文件，仅存档，不参与打包
   详见 quarkgui\README.md
+  云端构建：GitHub 仓库 Xitaoyou/QuarkAccel 带 .github/workflows/build-windows-x64.yml，
+  推 main / 提 PR / 手动 dispatch 都会在 windows-latest 上打一遍。
+  Actions 页面最近一次 run 的 Artifacts 里就有 QuarkAccel-win-x64.zip，解压即 exe。
+  云端产物实测 9002020 字节，sha256 ed11d395...fb97ec，界面与本机打包一致。
 
 【命令行版（脚本/批量用）】
   quark_fast.py   ls / link / dl / dir / verify
