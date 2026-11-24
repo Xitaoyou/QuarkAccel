@@ -1077,13 +1077,13 @@ class App:
         return pages[0] if pages else None
 
     def login_alive(self):
-        """登录窗口还活着吗（有进程 + 调试口答话）。"""
+        """登录窗口还活着吗（有进程 + 至少有一个普通 page 标签页）。"""
         if not procs.find_by_profile(self.login_prof()):
             return False
         port = read_devtools_port(self.login_prof(), 0.1)
         if port:
             self._login_port = port
-        return bool(_tabs(self._login_port))
+        return any(t.get("type") == "page" for t in _tabs(self._login_port))
 
     def api_login(self):
         """拉起官方登录页。已经开着就直接把页面导回登录页，不再新起进程。"""

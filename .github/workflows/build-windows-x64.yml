@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 env:
   PYTHONIOENCODING: utf-8
@@ -92,3 +92,28 @@ jobs:
           path: src/shell/dist/QuarkAccel.exe
           if-no-files-found: error
           retention-days: 30
+
+      - name: Sync GitHub Release (latest)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $exe = "src/shell/dist/QuarkAccel.exe"
+          $sha = $env:GITHUB_SHA.Substring(0, 7)
+          $sizeMb = [math]::Round((Get-Item $exe).Length / 1MB, 2)
+          $hash = "${{ steps.verify.outputs.sha256 }}"
+          $title = "QuarkAccel 最新构建 ($sha)"
+          $notes = "自动构建自 main 分支 ``$sha``。`n`n- 文件大小: $sizeMb MB`n- SHA256: ``$hash``"
+          $exists = $false
+          $oldPref = $ErrorActionPreference
+          $ErrorActionPreference = 'Continue'
+          gh release view latest 2>$null | Out-Null
+          if ($LASTEXITCODE -eq 0) { $exists = $true }
+          $ErrorActionPreference = $oldPref
+          if ($exists) {
+            gh release upload latest $exe --clobber
+            gh release edit latest --title $title --notes $notes --target $env:GITHUB_SHA
+          } else {
+            gh release create latest $exe --title $title --notes $notes --target $env:GITHUB_SHA
+          }

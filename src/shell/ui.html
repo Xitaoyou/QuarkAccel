@@ -1390,6 +1390,8 @@ document.getElementById('lnOpen').onclick = function () {
     } else {
       h.textContent = '打开失败：' + loginErr(r.err);
     }
+  }).catch(function (e) {
+    h.textContent = '打开失败：' + (e && e.message ? e.message : '连接本地服务失败');
   });
 };
 document.getElementById('lnDone').onclick = function () {
